@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User{
+  id String @id @default(cuid())
+  name String
+  email String @unique
+  passwordHash String
+  telegramUserID String? @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expensePaid Expense[]
+  expenseSplits ExpenseSplit[]
+  settlementsSent Settlement[] @relation("SettlementFrom")
+  settlementReceived Settlement[] @relation("SettlementTo")
+
+}
+
+model Expense{
+  id String @id @default(cuid())
+  amountPaid Int
+  transactionId String
+  description String
+  category String?
+  paidById String
+  expenseDate DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  paidBy User @relation(fields: [paidById],references: [id])
+  splits ExpenseSplit[]
+  @@index([paidById])
+  @@index([expenseDate])
+  @@unique([transactionId])
+  
+}
+
+model ExpenseSplit{
+  id String @id @default(cuid())
+  expenseId String
+  userId String
+  amountPaid Int
+  isSettled Boolean @default(false)
+  
+  expense Expense @relation(fields: [expenseId],references: [id],onDelete: Cascade)
+  user User @relation(fields: [userId],references: [id])
+
+  @@unique([expenseId,userId])
+}
+
+model Settlement{
+  id String @id @default(cuid())
+  fromUserId String
+  toUserId String
+  amountPaid String
+  status SettlementStatus @default(PENDING)
+  settledAt DateTime?
+  
+  fromUser User @relation("SettlementFrom",fields: [fromUserId],references: [id])
+  toUser User @relation("SettlementTo",fields: [toUserId],references: [id])
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  
+
+}
+
+enum SettlementStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
