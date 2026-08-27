@@ -64,7 +64,7 @@ model Settlement{
   id String @id @default(cuid())
   fromUserId String
   toUserId String
-  amountPaid String
+  amountPaid Int
   status SettlementStatus @default(PENDING)
   settledAt DateTime?
   

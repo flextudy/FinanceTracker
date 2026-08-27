@@ -6,14 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "bot": "tsx lib/bot/index.ts",
     "lint": "eslint"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "axios": "^1.20.0",
     "bcrypt": "^6.0.0",
     "dotenv": "^17.4.2",
     "next": "16.3.2",
+    "node-telegram-bot-api": "^2.1.0",
     "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
@@ -22,6 +25,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^6.0.0",
     "@types/node": "^20",
+    "@types/node-telegram-bot-api": "^0.64.15",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",

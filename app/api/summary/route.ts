@@ -40,7 +40,7 @@ export async function GET(){
                 if(split){
                     totalShare += split.amountPaid;
                 }
-
+            }
                 for(const settlement of settlements){
                     if(settlement.fromUserId===user.id){
                         moneySpent+=settlement.amountPaid
@@ -52,16 +52,16 @@ export async function GET(){
 
                 }
 
-                const balance = totalPaid - totalShare + moneySpent-moneyReceived;
-                return {
-                    userId:user.id,
-                    name:user.name,
-                    totalPaid,
-                    totalShare,
-                    moneySpent,
-                    moneyReceived,
-                    balance
-                }
+            
+            const balance = totalPaid - totalShare + moneySpent-moneyReceived;
+            return {
+                userId:user.id,
+                name:user.name,
+                totalPaid,
+                totalShare,
+                moneySpent,
+                moneyReceived,
+                balance
             }
         })
 
