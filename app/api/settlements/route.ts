@@ -2,6 +2,39 @@ import { SettlementStatus } from "@/app/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
+export async function GET(){
+    try{
+        const settlements = await prisma.settlement.findMany({
+          include:{
+            fromUser:{
+                select:{
+                    id:true,
+                    name:true
+                }
+            },
+            toUser:{
+                select:{
+                    id:true,
+                    name:true
+                }
+            }
+          },
+          orderBy:{
+            settledAt:"desc"
+          }
+        })
+        return NextResponse.json(settlements)
+    }
+    catch(error){
+        console.log(error);
+        return NextResponse.json({
+            error:"Failed to fetch settlements"
+        },{
+            status:500
+        })
+    }
+}
+
 export async function POST(request:Request){
     try{
         const body = await request.json();
