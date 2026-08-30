@@ -121,6 +121,52 @@ bot.command("settle", async (ctx) => {
 
 })
 
+bot.command("expenses",async(ctx)=>{
+    const telegramUserID = String(ctx.from?.id);
+    const user = await prisma.user.findUnique({
+        where:{
+            telegramUserID
+        }
+    })
+    if(!user){
+        await ctx.reply("❌ Your Telegram account is not linked.");
+        return;
+    }
+    try{
+
+    
+    const response = await api.get("/api/expenses");
+    const expenses = response.data;
+    if(expenses.length===0){
+        await ctx.reply("📭 No expenses found.");
+        return;
+    }
+
+    const recentExpense = expenses.slice(0,10);
+    const message = recentExpense.map((expense:any,index:number)=>{
+    const date = new Date(expense.createdAt).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                });
+    return `${index + 1}. 💰 ₹${expense.amountPaid}
+📝 ${expense.description}
+👤 Paid by: ${expense.paidBy.name}
+📅 ${date}`;
+            })
+            .join("\n\n");
+
+        await ctx.reply(
+            `📋 Recent Expenses\n\n${message}`
+        );
+    
+    } catch(error){
+        console.log(error);
+        await ctx.reply("❌ Failed to fetch expenses.");
+    }
+
+});
+
 bot.on("callback_query", async (ctx) => {
     const data = ctx.callbackQuery?.data;
     if(!data) return;
