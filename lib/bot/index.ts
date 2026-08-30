@@ -167,6 +167,72 @@ bot.command("expenses",async(ctx)=>{
 
 });
 
+bot.command("settlements",async(ctx)=>{
+    const telegramUserID = String(ctx.from?.id);
+    const user = await prisma.user.findUnique({
+        where:{
+            telegramUserID
+        }
+    });
+
+    if(!user){
+        await ctx.reply("❌ Your Telegram account is not linked.");
+        return;
+    }
+
+    try{
+        const response = await api.get("/api/settlements");
+        const settlements = response.data;
+        if(!settlements || settlements.length===0){
+            await ctx.reply("No settlements found.");
+            return;
+
+        }
+        const recentSettlements =
+            settlements.slice(0, 10);
+
+        const message = recentSettlements
+            .map(
+                (
+                    settlement: any,
+                    index: number
+                ) => {
+                    const date = new Date(
+                        settlement.settledAt
+                    ).toLocaleDateString(
+                        "en-IN",
+                        {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                        }
+                    );
+
+                    return `${index + 1}. 💸 ₹${settlement.amountPaid}
+👤 ${settlement.fromUser.name} → ${settlement.toUser.name}
+📅 ${date}`;
+                }
+            )
+            .join("\n\n");
+
+        await ctx.reply(
+            `💸 Recent Settlements\n\n${message}`
+        );
+
+    } catch (error) {
+        console.error(error);
+
+        await ctx.reply(
+            "❌ Failed to fetch settlements."
+        );
+    }
+        
+        
+        
+    
+
+})
+
 bot.on("callback_query", async (ctx) => {
     const data = ctx.callbackQuery?.data;
     if(!data) return;
