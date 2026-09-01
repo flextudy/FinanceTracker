@@ -51,23 +51,25 @@ export function RecordSettlementModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-[#1d1e1c]/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white border border-[#e3d6c5] rounded-[24px] max-w-lg w-full p-6 sm:p-8 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white border border-[#e3d6c5] rounded-[24px] max-w-lg w-full p-5 sm:p-8 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 max-h-[90dvh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-[#e3d6c5]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#fa5d00]/10 text-[#fa5d00] flex items-center justify-center">
-              <ArrowLeftRight className="w-5 h-5" />
+            <div className="size-10 rounded-xl bg-[#fa5d00]/10 text-[#fa5d00] flex items-center justify-center shrink-0">
+              <ArrowLeftRight className="size-5" />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-[#1d1e1c]">Record Partner Settlement</h3>
-              <p className="text-xs text-[#615f5c]">Record a direct payment between partners</p>
+              <h3 className="text-lg sm:text-xl font-bold text-[#1d1e1c] text-balance">Record Partner Settlement</h3>
+              <p className="text-xs text-[#615f5c] text-pretty">Record a direct payment between partners</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-[#8e8b87] hover:text-[#1d1e1c] p-1.5 rounded-full hover:bg-[#fff8f1] transition-colors"
+            aria-label="Close dialog"
+            className="text-[#8e8b87] hover:text-[#1d1e1c] p-1.5 rounded-full hover:bg-[#fff8f1] transition-colors cursor-pointer shrink-0"
           >
-            <X className="w-5 h-5" />
+            <X className="size-5" />
           </button>
         </div>
 

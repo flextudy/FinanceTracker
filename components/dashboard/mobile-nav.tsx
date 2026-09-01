@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Brand } from "@/components/layout/brand";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useCurrentUser } from "@/components/providers/current-user-provider";
 import {
   LayoutDashboard,
@@ -28,6 +27,14 @@ export function MobileNav() {
     { name: "Settlements", href: "/settlements", icon: ArrowLeftRight },
   ];
 
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {}
+    localStorage.removeItem("flextudy-current-user-id");
+    window.location.href = "/sign-in";
+  };
+
   return (
     <header className="md:hidden sticky top-0 z-50 bg-[#fff8f1]/95 backdrop-blur-md border-b border-[#e3d6c5] px-4 py-3">
       <div className="flex items-center justify-between">
@@ -35,7 +42,6 @@ export function MobileNav() {
         <Brand compact />
 
         <div className="flex items-center gap-3">
-          <ThemeToggle />
           <div className="w-8 h-8 rounded-full bg-[#fa5d00] text-white font-bold text-xs flex items-center justify-center">
             {user?.name?.split(" ").map((part) => part[0]).join("").slice(0, 2) ?? "--"}
           </div>
@@ -82,14 +88,14 @@ export function MobileNav() {
               <Settings className="w-4 h-4" />
               <span>Settings</span>
             </Link>
-            <Link
-              href="/sign-in"
-              onClick={() => setIsOpen(false)}
-              className="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#fa5d00]"
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#fa5d00] cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
               <span>Sign out</span>
-            </Link>
+            </button>
           </div>
         </div>
       )}

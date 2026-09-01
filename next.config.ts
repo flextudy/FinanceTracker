@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Allow the phone on the local network to load Next.js development assets
+  // (HMR and client JavaScript) from this computer.
+  allowedDevOrigins: ["10.32.94.157"],
 };
 
 export default nextConfig;

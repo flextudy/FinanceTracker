@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { Brand } from "@/components/layout/brand";
+import { ForgotPasswordModal } from "@/components/auth/forgot-password-modal";
 import {
   Lock,
   Mail,
@@ -19,7 +20,10 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { useRouter } from "next/navigation";
+
 export default function SignInPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -27,6 +31,7 @@ export default function SignInPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   useEffect(() => {
     // Force light mode on mount
@@ -44,7 +49,7 @@ export default function SignInPage() {
     };
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -58,11 +63,37 @@ export default function SignInPage() {
     }
 
     setIsLoading(true);
-    // Simulate sign-in submission
-    setTimeout(() => {
-      setIsLoading(false);
+
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: normalizedEmail, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to sign in. Please check your credentials.");
+      }
+
+      if (data.user?.id) {
+        localStorage.setItem("flextudy-current-user-id", data.user.id);
+      }
+
       setIsSubmitted(true);
-    }, 1200);
+
+      setTimeout(() => {
+        window.location.href = "/dashboard";
+      }, 400);
+    } catch (err: any) {
+      setError(err.message || "Invalid email or password. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -70,17 +101,7 @@ export default function SignInPage() {
       {/* Top Header Navigation */}
       <header className="w-full py-6 border-b border-[#e3d6c5]/40 bg-[#fff8f1]/80 backdrop-blur-md sticky top-0 z-50">
         <Container className="flex items-center justify-between">
-          <Brand />
-
-          <div className="flex items-center gap-2 text-sm text-[#615f5c]">
-            <span>Don&apos;t have an account?</span>
-            <Link
-              href="/sign-up"
-              className="text-[#fa5d00] font-semibold hover:underline inline-flex items-center gap-1"
-            >
-              Start free trial <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
+          <Brand href="/sign-in" />
         </Container>
       </header>
 
@@ -93,7 +114,7 @@ export default function SignInPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center max-w-5xl mx-auto">
             {/* Left Column: Sign-in Form Card */}
             <div className="lg:col-span-7">
-              <Card variant="paper" className="shadow-[6px_4px_24px_0px_rgba(250,166,0,0.2)] border border-[#e3d6c5] p-8 sm:p-10 relative">
+              <Card variant="paper" className="shadow-[6px_4px_24px_0px_rgba(250,166,0,0.2)] border border-[#e3d6c5] p-5 sm:p-8 md:p-10 relative">
                 {/* Form Header */}
                 <div className="mb-8">
                   <div className="inline-flex items-center gap-2 bg-[#fee3b5]/60 text-[#fa5d00] px-3.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider mb-4">
@@ -182,6 +203,9 @@ export default function SignInPage() {
                             placeholder="name@company.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
                             className="pl-11"
                           />
                           <Mail className="w-5 h-5 text-[#8e8b87] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -194,12 +218,13 @@ export default function SignInPage() {
                           <label className="block text-sm font-semibold text-[#1d1e1c]">
                             Password
                           </label>
-                          <Link
-                            href="/forgot-password"
-                            className="text-xs font-semibold text-[#fa5d00] hover:underline"
+                          <button
+                            type="button"
+                            onClick={() => setIsForgotPasswordOpen(true)}
+                            className="text-xs font-semibold text-[#fa5d00] hover:underline cursor-pointer"
                           >
                             Forgot password?
-                          </Link>
+                          </button>
                         </div>
                         <div className="relative">
                           <Input
@@ -341,6 +366,12 @@ export default function SignInPage() {
           </div>
         </Container>
       </footer>
+      {/* Forgot Password Dialog Modal */}
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        onClose={() => setIsForgotPasswordOpen(false)}
+        initialEmail={email}
+      />
     </div>
   );
 }

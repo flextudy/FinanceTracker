@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Brand } from "@/components/layout/brand";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useCurrentUser } from "@/components/providers/current-user-provider";
 import {
   LayoutDashboard,
@@ -37,6 +36,14 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useCurrentUser();
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch { }
+    localStorage.removeItem("flextudy-current-user-id");
+    window.location.href = "/sign-in";
+  };
 
   return (
     <aside className="hidden md:flex flex-col w-64 border-r border-[#e3d6c5]/70 bg-[#fff8f1] h-screen sticky top-0 justify-between p-6 select-none z-40">
@@ -90,12 +97,11 @@ export function Sidebar() {
         <div className="flex items-center justify-between">
           <Link
             href="/settings"
-            className="flex items-center gap-3 px-3.5 py-2.5 rounded-[14px] text-sm font-semibold text-[#615f5c] hover:bg-white hover:text-[#1d1e1c] transition-all"
+            className="flex items-center gap-3 px-3.5 py-2.5 rounded-[14px] text-sm font-semibold text-[#615f5c] hover:bg-white hover:text-[#1d1e1c] transition-all w-full"
           >
             <Settings className="w-4 h-4 text-[#8e8b87] shrink-0" />
             <span>Settings</span>
           </Link>
-          <ThemeToggle />
         </div>
 
         {/* User Card */}
@@ -114,13 +120,14 @@ export function Sidebar() {
             </div>
           </div>
 
-          <Link
-            href="/sign-in"
+          <button
+            type="button"
+            onClick={handleLogout}
             title="Sign out"
-            className="text-[#8e8b87] hover:text-[#fa5d00] p-1.5 rounded-lg hover:bg-[#fff8f1] transition-colors shrink-0"
+            className="text-[#8e8b87] hover:text-[#fa5d00] p-1.5 rounded-lg hover:bg-[#fff8f1] transition-colors shrink-0 cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
-          </Link>
+          </button>
         </div>
       </div>
     </aside>

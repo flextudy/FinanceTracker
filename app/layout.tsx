@@ -31,8 +31,7 @@ export default function RootLayout({
       className={`${sans.variable} ${serif.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-[#fff8f1] text-[#1d1e1c] font-sans">
-        <script dangerouslySetInnerHTML={{ __html: "try { if (localStorage.getItem('flextudy-theme') === 'dark' || (!localStorage.getItem('flextudy-theme') && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark') } catch {}" }} />
+      <body className="min-h-full flex flex-col bg-[#fff8f1] text-[#1d1e1c] font-sans" suppressHydrationWarning>
         <CurrentUserProvider>{children}</CurrentUserProvider>
       </body>
     </html>

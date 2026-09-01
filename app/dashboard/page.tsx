@@ -389,16 +389,16 @@ export default function DashboardPage() {
                     key={partner.id}
                     variant="paper"
                     className={`p-6 border transition-all duration-200 ${partner.isCurrentUser
-                        ? "border-[#fa5d00]/40 shadow-[0px_4px_16px_rgba(250,93,0,0.1)] bg-[#fff8f1]/30"
-                        : "border-[#e3d6c5] shadow-sm"
+                      ? "border-[#fa5d00]/40 shadow-[0px_4px_16px_rgba(250,93,0,0.1)] bg-[#fff8f1]/30"
+                      : "border-[#e3d6c5] shadow-sm"
                       }`}
                   >
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-3">
                         <div
                           className={`w-11 h-11 rounded-full font-bold flex items-center justify-center text-sm shadow-sm ${isReceiving
-                              ? "bg-emerald-600 text-white"
-                              : "bg-[#fa5d00] text-white"
+                            ? "bg-emerald-600 text-white"
+                            : "bg-[#fa5d00] text-white"
                             }`}
                         >
                           {partner.initials}
@@ -432,8 +432,8 @@ export default function DashboardPage() {
 
                       <span
                         className={`inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full border ${isReceiving
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : "bg-[#fee3b5]/60 text-[#fa5d00] border-[#fee3b5]"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-[#fee3b5]/60 text-[#fa5d00] border-[#fee3b5]"
                           }`}
                       >
                         {isReceiving ? (
