@@ -1,26 +1,75 @@
 @import "tailwindcss";
 
+@theme {
+  /* Brand Palette */
+  --color-harvest-flame: #fa5d00;
+  --color-marigold-glow: #fee3b5;
+  --color-parchment-shadow: #e3d6c5;
+  --color-ink-black: #1d1e1c;
+  --color-paper-white: #ffffff;
+  --color-cream-canvas: #fff8f1;
+  --color-mist-gray: #d9d9d9;
+  --color-warm-stone: #615f5c;
+  --color-driftwood: #8e8b87;
+  --color-ironwood: #4a4a47;
+  --color-ash: #777571;
+  --color-bone: #c0bbb6;
+  --color-smoke: #a5a19c;
+  --color-graphite: #999999;
+
+  /* Typography */
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: var(--font-serif), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+
+  /* Border Radii */
+  --radius-card: 20px;
+  --radius-input: 16px;
+  --radius-button: 16px;
+  --radius-image: 16px;
+  --radius-tag: 999px;
+
+  /* Shadows */
+  --shadow-warm-sm: 0px 1px 4px 0px rgba(0, 0, 0, 0.2);
+  --shadow-warm-lg: 6px 4px 24px 0px rgba(250, 166, 0, 0.25);
+  --shadow-sm: 0px 1px 4px 0px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 6px 4px 24px 0px rgba(250, 166, 0, 0.25);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fff8f1;
+  --foreground: #1d1e1c;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #0b1327;
+  --foreground: #f5f0e9;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  letter-spacing: 0.015em;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Custom Utilities */
+.hero-gradient-wash {
+  background: radial-gradient(
+    60% 60% at 50% 50%,
+    rgba(250, 93, 0, 0.15) 0%,
+    rgba(254, 227, 181, 0.35) 50%,
+    rgba(255, 248, 241, 0) 100%
+  );
+}
+
+/* The pages intentionally use the design-token palette directly. These mappings
+   keep that visual language coherent when the user switches themes. */
+.dark body, .dark .bg-\[\#fff8f1\] { background-color: #0b1327 !important; }
+.dark .bg-white { background-color: #16213a !important; }
+.dark .bg-\[\#fff8f1\]\/60, .dark .bg-\[\#fff8f1\]\/30 { background-color: rgba(22, 33, 58, .75) !important; }
+.dark .text-\[\#1d1e1c\] { color: #f5f0e9 !important; }
+.dark .text-\[\#615f5c\], .dark .text-\[\#8e8b87\] { color: #b8c2d5 !important; }
+.dark .border-\[\#e3d6c5\], .dark .border-\[\#e3d6c5\]\/70, .dark .border-\[\#e3d6c5\]\/60, .dark .border-\[\#e3d6c5\]\/50, .dark .border-\[\#c0bbb6\], .dark .border-\[\#d9d9d9\] { border-color: #2b3855 !important; }
+.dark input, .dark select { background-color: #101a30 !important; color: #f5f0e9 !important; }
+.dark .hero-gradient-wash { opacity: .28; }

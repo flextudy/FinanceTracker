@@ -69,9 +69,22 @@ export async function GET(){
             (total,expense) => total + expense.amountPaid,0
         );
 
+        const monthlyExpenses = Array.from({ length: 12 }, (_, index) => ({
+            month: new Date(2026, index, 1).toLocaleString("en", { month: "short" }),
+            amount: 0,
+        }));
+
+        for (const expense of expenses) {
+            const date = expense.expenseDate;
+            if (date.getFullYear() === 2026) {
+                monthlyExpenses[date.getMonth()].amount += expense.amountPaid;
+            }
+        }
+
         return NextResponse.json({
             totalSpent,
-            balance
+            balance,
+            monthlyExpenses,
 
         })
     }
