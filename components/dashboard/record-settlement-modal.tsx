@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, ArrowLeftRight, CheckCircle2 } from "lucide-react";
+import { X, ArrowLeftRight, CheckCircle2, Loader2 } from "lucide-react";
+import { CustomSelect } from "@/components/ui/custom-select";
 
 interface RecordSettlementModalProps {
   isOpen: boolean;
   onClose: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSuccess?: (settlement: any) => void;
 }
 
@@ -20,33 +22,98 @@ export function RecordSettlementModal({
   const [toUser, setToUser] = useState("Aditya Sharma");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("2026-08-31");
+  const [file, setFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch("/api/users")
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setUsers(data))
+        .catch(() => {});
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount) return;
+    if (!amount || fromUser === toUser) return;
+    setError(null);
+    setIsSubmitting(true);
 
-    const newSettlement = {
-      id: Date.now().toString(),
-      fromUser,
-      toUser,
-      amount: parseInt(amount, 10),
-      formattedAmount: `₹${parseInt(amount, 10).toLocaleString("en-IN")}`,
-      date: new Date(date).toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
-    };
+    try {
+      const parsedAmount = parseInt(amount, 10);
+      const fromUserObj = users.find((u) => u.name === fromUser);
+      const toUserObj = users.find((u) => u.name === toUser);
 
-    setIsSuccess(true);
-    setTimeout(() => {
-      setIsSuccess(false);
-      if (onSuccess) onSuccess(newSettlement);
-      onClose();
-    }, 1000);
+      let createdSettlementId = Date.now().toString();
+      let createdAttachments: any[] = [];
+
+      if (fromUserObj && toUserObj) {
+        const response = await fetch("/api/settlements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fromUserId: fromUserObj.id,
+            toUserId: toUserObj.id,
+            amount: parsedAmount,
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || errData.message || "Failed to create settlement.");
+        }
+
+        const data = await response.json();
+        const createdObj = data.settlement || data;
+        createdSettlementId = createdObj.id;
+
+        if (file) {
+          const formData = new FormData();
+          formData.append("file", file);
+          const attRes = await fetch(`/api/settlements/${createdSettlementId}/attachments`, {
+            method: "POST",
+            body: formData,
+          });
+          if (attRes.ok) {
+            const attData = await attRes.json();
+            if (attData.attachment) {
+              createdAttachments.push(attData.attachment);
+            }
+          }
+        }
+      }
+
+      const newSettlement = {
+        id: createdSettlementId,
+        fromUser,
+        toUser,
+        amount: parsedAmount,
+        formattedAmount: `₹${parsedAmount.toLocaleString("en-IN")}`,
+        date: new Date(date).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+        attachments: createdAttachments,
+      };
+
+      setIsSuccess(true);
+      setTimeout(() => {
+        setIsSuccess(false);
+        setIsSubmitting(false);
+        if (onSuccess) onSuccess(newSettlement);
+        onClose();
+      }, 1000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -81,35 +148,32 @@ export function RecordSettlementModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 pt-6">
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600">
+                {error}
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#1d1e1c] mb-1.5">
                   Payer (From)
                 </label>
-                <select
+                <CustomSelect
+                  options={["Vishal Kumar Singh", "Ujjwal Kumar Singh", "Aditya Sharma"]}
                   value={fromUser}
-                  onChange={(e) => setFromUser(e.target.value)}
-                  className="w-full bg-white border border-[#c0bbb6] text-[#1d1e1c] rounded-[16px] px-4 py-3.5 text-sm focus:outline-none focus:border-[#fa5d00] focus:ring-2 focus:ring-[#fa5d00]/20"
-                >
-                  <option value="Vishal Kumar Singh">Vishal Kumar Singh</option>
-                  <option value="Ujjwal Kumar Singh">Ujjwal Kumar Singh</option>
-                  <option value="Aditya Sharma">Aditya Sharma</option>
-                </select>
+                  onChange={setFromUser}
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#1d1e1c] mb-1.5">
                   Recipient (To)
                 </label>
-                <select
+                <CustomSelect
+                  options={["Aditya Sharma", "Vishal Kumar Singh", "Ujjwal Kumar Singh"]}
                   value={toUser}
-                  onChange={(e) => setToUser(e.target.value)}
-                  className="w-full bg-white border border-[#c0bbb6] text-[#1d1e1c] rounded-[16px] px-4 py-3.5 text-sm focus:outline-none focus:border-[#fa5d00] focus:ring-2 focus:ring-[#fa5d00]/20"
-                >
-                  <option value="Aditya Sharma">Aditya Sharma</option>
-                  <option value="Vishal Kumar Singh">Vishal Kumar Singh</option>
-                  <option value="Ujjwal Kumar Singh">Ujjwal Kumar Singh</option>
-                </select>
+                  onChange={setToUser}
+                />
               </div>
             </div>
 
@@ -140,6 +204,19 @@ export function RecordSettlementModal({
               </div>
             </div>
 
+            {/* Optional File Attachment Input */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#1d1e1c] mb-1.5">
+                Attachment (Optional Proof / Receipt)
+              </label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="w-full text-xs text-[#615f5c] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#fa5d00]/10 file:text-[#fa5d00] hover:file:bg-[#fa5d00]/20 cursor-pointer"
+              />
+            </div>
+
             <div className="bg-emerald-50 p-3.5 rounded-[16px] border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between">
               <span>Transfer summary:</span>
               <span className="font-bold">
@@ -149,11 +226,17 @@ export function RecordSettlementModal({
 
             {/* Buttons */}
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e3d6c5]">
-              <Button type="button" variant="secondary" onClick={onClose}>
+              <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary">
-                Record Payment
+              <Button type="submit" variant="primary" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Recording...
+                  </span>
+                ) : (
+                  "Record Payment"
+                )}
               </Button>
             </div>
           </form>
@@ -162,3 +245,4 @@ export function RecordSettlementModal({
     </div>
   );
 }
+

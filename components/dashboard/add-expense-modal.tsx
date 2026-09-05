@@ -1,13 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, Plus, Receipt, CheckCircle2 } from "lucide-react";
+import { X, Receipt, CheckCircle2, Loader2 } from "lucide-react";
+
+import { CustomSelect } from "@/components/ui/custom-select";
 
 interface AddExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSuccess?: (expense: any) => void;
 }
 
@@ -17,34 +20,100 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess }: AddExpenseModalP
   const [paidBy, setPaidBy] = useState("Aditya Sharma");
   const [date, setDate] = useState("2026-08-31");
   const [category, setCategory] = useState("Infrastructure");
+  const [file, setFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch("/api/users")
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setUsers(data))
+        .catch(() => {});
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!description || !amount) return;
+    setError(null);
+    setIsSubmitting(true);
 
-    const newExpense = {
-      id: Date.now().toString(),
-      description,
-      paidBy,
-      amount: parseInt(amount, 10),
-      formattedAmount: `₹${parseInt(amount, 10).toLocaleString("en-IN")}`,
-      date: new Date(date).toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
-      category,
-    };
+    try {
+      const parsedAmount = parseInt(amount, 10);
+      const selectedUser = users.find((u) => u.name === paidBy) || users[0];
+      const paidById = selectedUser?.id;
 
-    setIsSuccess(true);
-    setTimeout(() => {
-      setIsSuccess(false);
-      if (onSuccess) onSuccess(newExpense);
-      onClose();
-    }, 1000);
+      let createdExpenseId = Date.now().toString();
+      let createdAttachments: any[] = [];
+
+      if (paidById) {
+        const response = await fetch("/api/expenses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amountPaid: parsedAmount,
+            transactionId: `TXN-${Date.now().toString().slice(-6)}`,
+            description,
+            category,
+            paidById,
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || errData.message || "Failed to create expense.");
+        }
+
+        const data = await response.json();
+        createdExpenseId = data.id;
+
+        if (file) {
+          const formData = new FormData();
+          formData.append("file", file);
+          const attRes = await fetch(`/api/expenses/${data.id}/attachments`, {
+            method: "POST",
+            body: formData,
+          });
+          if (attRes.ok) {
+            const attData = await attRes.json();
+            if (attData.attachment) {
+              createdAttachments.push(attData.attachment);
+            }
+          }
+        }
+      }
+
+      const newExpense = {
+        id: createdExpenseId,
+        description,
+        paidBy,
+        amount: parsedAmount,
+        formattedAmount: `₹${parsedAmount.toLocaleString("en-IN")}`,
+        date: new Date(date).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+        category,
+        attachments: createdAttachments,
+      };
+
+      setIsSuccess(true);
+      setTimeout(() => {
+        setIsSuccess(false);
+        setIsSubmitting(false);
+        if (onSuccess) onSuccess(newExpense);
+        onClose();
+      }, 1000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -79,6 +148,11 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess }: AddExpenseModalP
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 pt-6">
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600">
+                {error}
+              </div>
+            )}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-[#1d1e1c] mb-1.5">
                 Expense Description
@@ -109,15 +183,11 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess }: AddExpenseModalP
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#1d1e1c] mb-1.5">
                   Paid By
                 </label>
-                <select
+                <CustomSelect
+                  options={["Aditya Sharma", "Vishal Kumar Singh", "Ujjwal Kumar Singh"]}
                   value={paidBy}
-                  onChange={(e) => setPaidBy(e.target.value)}
-                  className="w-full bg-white border border-[#c0bbb6] text-[#1d1e1c] rounded-[16px] px-4 py-3.5 text-sm focus:outline-none focus:border-[#fa5d00] focus:ring-2 focus:ring-[#fa5d00]/20"
-                >
-                  <option value="Aditya Sharma">Aditya Sharma</option>
-                  <option value="Vishal Kumar Singh">Vishal Kumar Singh</option>
-                  <option value="Ujjwal Kumar Singh">Ujjwal Kumar Singh</option>
-                </select>
+                  onChange={setPaidBy}
+                />
               </div>
             </div>
 
@@ -138,17 +208,25 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess }: AddExpenseModalP
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#1d1e1c] mb-1.5">
                   Category
                 </label>
-                <select
+                <CustomSelect
+                  options={["Infrastructure", "Software/SaaS", "Domain & Ops", "Office & Food"]}
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-white border border-[#c0bbb6] text-[#1d1e1c] rounded-[16px] px-4 py-3.5 text-sm focus:outline-none focus:border-[#fa5d00] focus:ring-2 focus:ring-[#fa5d00]/20"
-                >
-                  <option value="Infrastructure">Infrastructure</option>
-                  <option value="Software/SaaS">Software/SaaS</option>
-                  <option value="Domain & Ops">Domain & Ops</option>
-                  <option value="Office & Food">Office & Food</option>
-                </select>
+                  onChange={setCategory}
+                />
               </div>
+            </div>
+
+            {/* Optional File Attachment Input */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#1d1e1c] mb-1.5">
+                Attachment (Optional Receipt / Invoice)
+              </label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="w-full text-xs text-[#615f5c] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#fa5d00]/10 file:text-[#fa5d00] hover:file:bg-[#fa5d00]/20 cursor-pointer"
+              />
             </div>
 
             {/* Split Info */}
@@ -161,11 +239,17 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess }: AddExpenseModalP
 
             {/* Buttons */}
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e3d6c5]">
-              <Button type="button" variant="secondary" onClick={onClose}>
+              <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" showArrow>
-                Save Expense
+              <Button type="submit" variant="primary" showArrow disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Saving...
+                  </span>
+                ) : (
+                  "Save Expense"
+                )}
               </Button>
             </div>
           </form>
@@ -174,3 +258,4 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess }: AddExpenseModalP
     </div>
   );
 }
+

@@ -6,6 +6,8 @@ import { MobileNav } from "@/components/dashboard/mobile-nav";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Attachment } from "@/types";
+import { AttachmentSection } from "@/components/ui/attachment-section";
 import {
   CalendarDays,
   ChevronDown,
@@ -14,12 +16,15 @@ import {
   FileText,
   Filter,
   MoreHorizontal,
+  Paperclip,
   Plus,
   Receipt,
   Search,
   UserRound,
   X,
 } from "lucide-react";
+
+import { CustomSelect } from "@/components/ui/custom-select";
 
 type Expense = {
   id: string;
@@ -29,38 +34,13 @@ type Expense = {
   amount: number;
   date: string;
   category: string;
+  attachments?: Attachment[];
 };
 
 const partners = ["Aditya Sharma", "Vishal Kumar Singh", "Ujjwal Kumar Singh"];
 const categories = ["Software", "Hosting", "Marketing", "Operations"];
 
 const formatAmount = (amount: number) => `₹${amount.toLocaleString("en-IN")}`;
-
-function SelectControl({
-  children,
-  value,
-  onChange,
-  ariaLabel,
-}: {
-  children: React.ReactNode;
-  value: string;
-  onChange: (value: string) => void;
-  ariaLabel: string;
-}) {
-  return (
-    <div className="relative min-w-0">
-      <select
-        aria-label={ariaLabel}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="appearance-none w-full bg-white border border-[#c0bbb6] text-[#615f5c] text-sm font-medium rounded-[14px] py-2.5 pl-3 pr-8 outline-none focus:border-[#fa5d00] focus:ring-2 focus:ring-[#fa5d00]/15 cursor-pointer"
-      >
-        {children}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8e8b87]" />
-    </div>
-  );
-}
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -74,7 +54,6 @@ export default function ExpensesPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
 
   useEffect(() => {
-    setIsLoading(true);
     fetch("/api/expenses")
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((items) => {
@@ -88,6 +67,7 @@ export default function ExpensesPage() {
               expenseDate: string;
               category: string | null;
               paidBy: { name: string };
+              attachments?: Attachment[];
             }) => ({
               id: item.id,
               description: item.description,
@@ -100,6 +80,7 @@ export default function ExpensesPage() {
               }),
               category: item.category || "Operations",
               paidBy: item.paidBy.name,
+              attachments: item.attachments || [],
             })
           )
         );
@@ -265,23 +246,25 @@ export default function ExpensesPage() {
                   className="py-2.5 pl-10 text-sm"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-3">
-                <SelectControl value={dateFilter} onChange={setDateFilter} ariaLabel="Filter by date">
-                  <option>All dates</option>
-                  <option>August 2026</option>
-                </SelectControl>
-                <SelectControl value={paidBy} onChange={setPaidBy} ariaLabel="Filter by paid by">
-                  <option>All partners</option>
-                  {partners.map((partner) => (
-                    <option key={partner}>{partner}</option>
-                  ))}
-                </SelectControl>
-                <SelectControl value={category} onChange={setCategory} ariaLabel="Filter by category">
-                  <option>All categories</option>
-                  {categories.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </SelectControl>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                <CustomSelect
+                  options={["All dates", "September 2026", "August 2026"]}
+                  value={dateFilter}
+                  onChange={setDateFilter}
+                  ariaLabel="Filter by date"
+                />
+                <CustomSelect
+                  options={["All partners", ...partners]}
+                  value={paidBy}
+                  onChange={setPaidBy}
+                  ariaLabel="Filter by paid by"
+                />
+                <CustomSelect
+                  options={["All categories", ...categories]}
+                  value={category}
+                  onChange={setCategory}
+                  ariaLabel="Filter by category"
+                />
               </div>
               {hasFilters && (
                 <button
@@ -372,14 +355,7 @@ export default function ExpensesPage() {
                           <ExpenseTableRow
                             key={expense.id}
                             expense={expense}
-                            menuOpen={menuId === expense.id}
-                            onToggle={() =>
-                              setMenuId(menuId === expense.id ? null : expense.id)
-                            }
-                            onView={() => {
-                              setDetails(expense);
-                              setMenuId(null);
-                            }}
+                            onView={() => setDetails(expense)}
                           />
                         ))}
                       </tbody>
@@ -406,7 +382,18 @@ export default function ExpensesPage() {
           </section>
         </div>
       </main>
-      {details && <ExpenseDetails expense={details} onClose={() => setDetails(null)} />}
+      {details && (
+        <ExpenseDetails
+          expense={details}
+          onClose={() => setDetails(null)}
+          onUpdateExpense={(updated) => {
+            setExpenses((current) =>
+              current.map((e) => (e.id === updated.id ? updated : e))
+            );
+            setDetails(updated);
+          }}
+        />
+      )}
       {isAddOpen && (
         <AddExpenseForm
           onClose={() => setIsAddOpen(false)}
@@ -422,58 +409,58 @@ export default function ExpensesPage() {
 
 function ExpenseTableRow({
   expense,
-  menuOpen,
-  onToggle,
   onView,
 }: {
   expense: Expense;
-  menuOpen: boolean;
-  onToggle: () => void;
   onView: () => void;
 }) {
   return (
-    <tr className="border-b border-[#e3d6c5]/70 last:border-0 hover:bg-[#fff8f1]/60">
+    <tr
+      onClick={onView}
+      className="border-b border-[#e3d6c5]/70 last:border-0 hover:bg-[#fff8f1] cursor-pointer transition-all duration-150 group"
+    >
       <td className="px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="hidden h-9 w-9 items-center justify-center rounded-xl border border-[#e3d6c5] bg-[#fff8f1] text-[#fa5d00] lg:flex">
+          <div className="hidden h-9 w-9 items-center justify-center rounded-xl border border-[#e3d6c5] bg-[#fff8f1] text-[#fa5d00] group-hover:scale-105 transition-transform lg:flex">
             <Receipt className="h-4 w-4" />
           </div>
           <div>
-            <p className="font-semibold text-[#1d1e1c]">{expense.description}</p>
+            <p className="font-semibold text-[#1d1e1c] group-hover:text-[#fa5d00] transition-colors">{expense.description}</p>
             <p className="mt-0.5 text-xs text-[#8e8b87]">{expense.transactionId}</p>
           </div>
         </div>
       </td>
       <td className="px-4 py-4">
-        <p className="text-sm font-medium text-[#1d1e1c]">{expense.paidBy}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-[#1d1e1c]">{expense.paidBy}</p>
+          {expense.attachments && expense.attachments.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#fa5d00]/10 border border-[#fa5d00]/20 px-2 py-0.5 text-[10px] font-bold text-[#fa5d00]">
+              <Paperclip className="h-3 w-3" />
+              {expense.attachments.length}
+            </span>
+          )}
+        </div>
         <span className="mt-1 inline-flex rounded-full bg-[#fa5d00]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#fa5d00]">
           {expense.category}
         </span>
       </td>
-      <td className="px-4 py-4 text-sm font-bold text-[#1d1e1c]">
+      <td className="px-4 py-4 text-sm font-bold text-[#1d1e1c] tabular-nums">
         {formatAmount(expense.amount)}
       </td>
       <td className="whitespace-nowrap px-4 py-4 text-sm text-[#615f5c]">
         {expense.date}
       </td>
-      <td className="relative px-4 py-4">
+      <td className="relative px-4 py-4 text-right">
         <button
-          onClick={onToggle}
-          className="rounded-lg p-2 text-[#8e8b87] hover:bg-[#fff8f1] hover:text-[#fa5d00] cursor-pointer"
-          aria-label={`Actions for ${expense.description}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onView();
+          }}
+          className="inline-flex items-center gap-1 rounded-xl border border-[#e3d6c5] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#fa5d00] hover:bg-[#fa5d00] hover:text-white hover:border-[#fa5d00] transition-all shadow-sm cursor-pointer"
+          aria-label={`View details for ${expense.description}`}
         >
-          <MoreHorizontal className="h-5 w-5" />
+          <Eye className="h-3.5 w-3.5" /> Details
         </button>
-        {menuOpen && (
-          <div className="absolute right-5 top-12 z-20 w-36 rounded-xl border border-[#e3d6c5] bg-white p-1.5 shadow-lg">
-            <button
-              onClick={onView}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-[#1d1e1c] hover:bg-[#fff8f1] cursor-pointer"
-            >
-              <Eye className="h-4 w-4 text-[#fa5d00]" /> View details
-            </button>
-          </div>
-        )}
       </td>
     </tr>
   );
@@ -481,13 +468,16 @@ function ExpenseTableRow({
 
 function ExpenseMobileCard({ expense, onView }: { expense: Expense; onView: () => void }) {
   return (
-    <Card className="p-4 border border-[#e3d6c5] shadow-sm">
+    <Card
+      onClick={onView}
+      className="p-4 border border-[#e3d6c5] shadow-sm hover:border-[#fa5d00]/40 transition-all cursor-pointer"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-semibold text-[#1d1e1c]">{expense.description}</p>
           <p className="mt-1 text-xs text-[#8e8b87]">{expense.transactionId}</p>
         </div>
-        <p className="shrink-0 text-lg font-bold text-[#1d1e1c]">
+        <p className="shrink-0 text-lg font-bold text-[#1d1e1c] tabular-nums">
           {formatAmount(expense.amount)}
         </p>
       </div>
@@ -497,16 +487,27 @@ function ExpenseMobileCard({ expense, onView }: { expense: Expense; onView: () =
           <p className="mt-0.5 text-xs text-[#8e8b87]">{expense.date}</p>
         </div>
         <button
-          onClick={onView}
-          className="rounded-[12px] border border-[#e3d6c5] bg-[#fff8f1] p-2 text-[#fa5d00] cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onView();
+          }}
+          className="inline-flex items-center gap-1 rounded-[12px] border border-[#e3d6c5] bg-[#fff8f1] px-2.5 py-1.5 text-xs font-semibold text-[#fa5d00] hover:bg-[#fa5d00] hover:text-white transition-colors cursor-pointer"
           aria-label={`View ${expense.description}`}
         >
-          <Eye className="h-4 w-4" />
+          <Eye className="h-3.5 w-3.5" /> View
         </button>
       </div>
-      <span className="mt-3 inline-flex rounded-full bg-[#fa5d00]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#fa5d00]">
-        {expense.category}
-      </span>
+      <div className="mt-3 flex items-center justify-between">
+        <span className="inline-flex rounded-full bg-[#fa5d00]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#fa5d00]">
+          {expense.category}
+        </span>
+        {expense.attachments && expense.attachments.length > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#fa5d00]/10 px-2 py-0.5 text-[10px] font-bold text-[#fa5d00]">
+            <Paperclip className="h-3 w-3" />
+            {expense.attachments.length} file{expense.attachments.length > 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
     </Card>
   );
 }
@@ -583,15 +584,49 @@ function ModalShell({
   );
 }
 
-function ExpenseDetails({ expense, onClose }: { expense: Expense; onClose: () => void }) {
+function ExpenseDetails({
+  expense,
+  onClose,
+  onUpdateExpense,
+}: {
+  expense: Expense;
+  onClose: () => void;
+  onUpdateExpense?: (updated: Expense) => void;
+}) {
   const share = formatAmount(Math.floor(expense.amount / 3));
+
+  const handleUpload = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`/api/expenses/${expense.id}/attachments`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.message || "Failed to upload attachment.");
+    }
+
+    const data = await response.json();
+    const newAtt = data.attachment as Attachment;
+    const updated = {
+      ...expense,
+      attachments: [newAtt, ...(expense.attachments || [])],
+    };
+    if (onUpdateExpense) {
+      onUpdateExpense(updated);
+    }
+  };
+
   return (
     <ModalShell
       title="Expense details"
       subtitle="A shared expense split equally between partners."
       onClose={onClose}
     >
-      <div className="space-y-5 py-5">
+      <div className="space-y-5 py-5 max-h-[75vh] overflow-y-auto pr-1">
         <div className="rounded-[16px] border border-[#fee3b5] bg-[#fff8f1] p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">
             Description
@@ -620,6 +655,14 @@ function ExpenseDetails({ expense, onClose }: { expense: Expense; onClose: () =>
             ))}
           </div>
         </div>
+
+        {/* Attachment Section */}
+        <AttachmentSection
+          attachments={expense.attachments}
+          onUpload={handleUpload}
+          title="Expense Attachments"
+        />
+
         <div className="flex justify-end border-t border-[#e3d6c5] pt-4">
           <Button variant="secondary" onClick={onClose}>
             Close
@@ -651,21 +694,88 @@ function AddExpenseForm({
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("Software");
   const [paidBy, setPaidBy] = useState(partners[0]);
+  const [file, setFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
 
-  const submit = (event: React.FormEvent) => {
+  useEffect(() => {
+    fetch("/api/users")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setUsers(data))
+      .catch(() => { });
+  }, []);
+
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setError(null);
     const parsedAmount = Number(amount);
     if (!description || !transactionId || !Number.isFinite(parsedAmount) || parsedAmount <= 0)
       return;
-    onAdd({
-      id: Date.now().toString(),
-      description,
-      transactionId,
-      category,
-      paidBy,
-      amount: parsedAmount,
-      date: "31 Aug 2026",
-    });
+
+    setIsSubmitting(true);
+    try {
+      const selectedUser = users.find((u) => u.name === paidBy) || users[0];
+      const paidById = selectedUser?.id;
+
+      let createdExpenseId = Date.now().toString();
+      let createdAttachments: Attachment[] = [];
+
+      if (paidById) {
+        const response = await fetch("/api/expenses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amountPaid: parsedAmount,
+            transactionId,
+            description,
+            category,
+            paidById,
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || errData.message || "Failed to create expense.");
+        }
+
+        const data = await response.json();
+        createdExpenseId = data.id;
+
+        if (file) {
+          const formData = new FormData();
+          formData.append("file", file);
+          const attRes = await fetch(`/api/expenses/${data.id}/attachments`, {
+            method: "POST",
+            body: formData,
+          });
+          if (attRes.ok) {
+            const attData = await attRes.json();
+            if (attData.attachment) {
+              createdAttachments.push(attData.attachment);
+            }
+          }
+        }
+      }
+
+      onAdd({
+        id: createdExpenseId,
+        description,
+        transactionId,
+        category,
+        paidBy,
+        amount: parsedAmount,
+        date: new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+        attachments: createdAttachments,
+      });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -674,7 +784,12 @@ function AddExpenseForm({
       subtitle="This expense will be split equally among all 3 partners."
       onClose={onClose}
     >
-      <form onSubmit={submit} className="space-y-4 pt-5">
+      <form onSubmit={submit} className="space-y-4 pt-5 max-h-[75vh] overflow-y-auto pr-1">
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600">
+            {error}
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Amount (₹)">
             <Input
@@ -705,28 +820,31 @@ function AddExpenseForm({
         </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Category">
-            <select
+            <CustomSelect
+              options={categories}
               value={category}
-              onChange={(event) => setCategory(event.target.value)}
-              className="w-full rounded-[16px] border border-[#c0bbb6] bg-white px-4 py-3.5 text-sm text-[#1d1e1c] outline-none focus:border-[#fa5d00]"
-            >
-              {categories.map((item) => (
-                <option key={item}>{item}</option>
-              ))}
-            </select>
+              onChange={setCategory}
+            />
           </Field>
           <Field label="Paid by">
-            <select
+            <CustomSelect
+              options={partners}
               value={paidBy}
-              onChange={(event) => setPaidBy(event.target.value)}
-              className="w-full rounded-[16px] border border-[#c0bbb6] bg-white px-4 py-3.5 text-sm text-[#1d1e1c] outline-none focus:border-[#fa5d00]"
-            >
-              {partners.map((partner) => (
-                <option key={partner}>{partner}</option>
-              ))}
-            </select>
+              onChange={setPaidBy}
+            />
           </Field>
         </div>
+
+        {/* Optional File Attachment Input */}
+        <Field label="Attachment (Optional Receipt / Invoice)">
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="w-full text-xs text-[#615f5c] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#fa5d00]/10 file:text-[#fa5d00] hover:file:bg-[#fa5d00]/20 cursor-pointer"
+          />
+        </Field>
+
         <div className="rounded-[14px] border border-[#e3d6c5] bg-[#fff8f1] px-3.5 py-3 text-xs text-[#615f5c]">
           Equal split:{" "}
           <span className="font-bold text-[#fa5d00]">
@@ -736,11 +854,11 @@ function AddExpenseForm({
           </span>
         </div>
         <div className="flex justify-end gap-3 border-t border-[#e3d6c5] pt-4">
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button type="submit">
-            <Plus className="h-4 w-4" /> Add Expense
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Adding..." : <><Plus className="h-4 w-4" /> Add Expense</>}
           </Button>
         </div>
       </form>
@@ -756,3 +874,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
+
