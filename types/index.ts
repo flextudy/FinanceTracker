@@ -17,3 +17,15 @@ export interface TrustLogo {
   name: string;
   logoUrl?: string;
 }
+
+export interface Attachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  driveFileId: string;
+  fileUrl: string;
+  expenseId?: string | null;
+  settlementId?: string | null;
+  createdAt: string;
+}
+

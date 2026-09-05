@@ -45,6 +45,7 @@ model Expense{
 
   paidBy User @relation(fields: [paidById],references: [id])
   splits ExpenseSplit[]
+  attachments Attachment[]
   @@index([paidById])
   @@index([expenseDate])
   @@unique([transactionId])
@@ -71,6 +72,7 @@ model Settlement{
   amountPaid Int
   status SettlementStatus @default(PENDING)
   settledAt DateTime?
+  attachments Attachment[]
   
   fromUser User @relation("SettlementFrom",fields: [fromUserId],references: [id])
   toUser User @relation("SettlementTo",fields: [toUserId],references: [id])
@@ -79,6 +81,25 @@ model Settlement{
   @@index([toUserId])
   
 
+}
+
+model Attachment{
+  id String @id @default(cuid())
+  fileName String
+  mimeType String
+  driveFileId String
+  fileUrl String
+
+  expenseId String?
+  settlementId String? 
+
+  expense Expense? @relation(fields: [expenseId],references: [id],onDelete: Cascade)
+  settlement Settlement? @relation(fields: [settlementId],references: [id],onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([expenseId])
+  @@index([settlementId])
 }
 
 enum SettlementStatus {
