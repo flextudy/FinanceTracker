@@ -7,7 +7,8 @@ export async function GET(){
         const users = await prisma.user.findMany({
             orderBy:{
                 createdAt:"asc"
-            }
+            },
+            select: { id: true, name: true }
         });
 
         const expenses = await prisma.expense.findMany({
