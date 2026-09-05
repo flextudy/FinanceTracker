@@ -13,7 +13,6 @@ import {
   Mail,
   Eye,
   EyeOff,
-  ArrowRight,
   CheckCircle2,
   ShieldCheck,
   TrendingUp,
@@ -32,6 +31,7 @@ export default function SignInPage() {
   const [error, setError] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+  const [year, setYear] = useState<number | null>(null);
 
   useEffect(() => {
     // Force light mode on mount
@@ -39,6 +39,8 @@ export default function SignInPage() {
     if (isDark) {
       document.documentElement.classList.remove("dark");
     }
+
+    setYear(new Date().getFullYear());
 
     // Restore user theme preference on unmount
     return () => {
@@ -87,10 +89,10 @@ export default function SignInPage() {
       setIsSubmitted(true);
 
       setTimeout(() => {
-        window.location.href = "/dashboard";
+        router.push("/dashboard");
       }, 400);
-    } catch (err: any) {
-      setError(err.message || "Invalid email or password. Please try again.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Invalid email or password. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -357,7 +359,7 @@ export default function SignInPage() {
       <footer className="py-6 border-t border-[#e3d6c5]/40 text-center text-xs text-[#8e8b87]">
         <Container>
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p>© {new Date().getFullYear()} Flextudy Finance Tracker. All rights reserved.</p>
+            <p>© {year ?? ""} Flextudy Finance Tracker. All rights reserved.</p>
             <div className="flex gap-6">
               <Link href="#" className="hover:text-[#1d1e1c]">Privacy Policy</Link>
               <Link href="#" className="hover:text-[#1d1e1c]">Terms of Service</Link>
