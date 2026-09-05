@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Brand } from "@/components/layout/brand";
 import { useCurrentUser } from "@/components/providers/current-user-provider";
@@ -35,15 +35,20 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user } = useCurrentUser();
+  const router = useRouter();
+  const { user, isMounted } = useCurrentUser();
 
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch { }
     localStorage.removeItem("flextudy-current-user-id");
-    window.location.href = "/sign-in";
+    router.push("/sign-in");
   };
+
+  const userName = isMounted && user?.name ? user.name : null;
+  const userInitials = userName ? userName.split(" ").map((part) => part[0]).join("").slice(0, 2) : "--";
+  const userEmail = isMounted && user?.email ? user.email : "";
 
   return (
     <aside className="hidden md:flex flex-col w-64 border-r border-[#e3d6c5]/70 bg-[#fff8f1] h-screen sticky top-0 justify-between p-6 select-none z-40">
@@ -53,8 +58,8 @@ export function Sidebar() {
         <Brand />
 
         {/* Nav Links */}
-        <nav className="space-y-1.5">
-          <p className="px-3 text-xs font-semibold uppercase tracking-wider text-[#8e8b87] mb-2">
+        <nav className="space-y-3">
+          <p className="px-3 text-xs font-semibold uppercase tracking-wider text-[#8e8b87] mb-3">
             Main Navigation
           </p>
           {navItems.map((item) => {
@@ -68,13 +73,13 @@ export function Sidebar() {
                 key={item.name}
                 href={item.href}
                 className={cn(
-                  "flex items-center justify-between px-3.5 py-3 rounded-[14px] text-sm font-semibold transition-all duration-200 group",
+                  "flex items-center justify-between px-4 py-3.5 rounded-[16px] text-sm font-semibold transition-all duration-200 group my-1",
                   isActive
-                    ? "bg-[#fa5d00] text-white shadow-[0px_1px_4px_0px_rgba(250,93,0,0.25)]"
+                    ? "bg-[#fa5d00] text-white shadow-[0px_2px_8px_0px_rgba(250,93,0,0.25)]"
                     : "text-[#615f5c] hover:bg-white hover:text-[#1d1e1c]"
                 )}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3.5">
                   <Icon
                     className={cn(
                       "w-4 h-4 transition-colors shrink-0",
@@ -108,14 +113,14 @@ export function Sidebar() {
         <div className="bg-white border border-[#e3d6c5] rounded-[16px] p-3 shadow-sm flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-full bg-[#fa5d00] text-white font-bold flex items-center justify-center text-xs shrink-0">
-              {user?.name?.split(" ").map((part) => part[0]).join("").slice(0, 2) ?? "--"}
+              {userInitials}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-[#1d1e1c] truncate">
-                {user?.name ?? "Loading partner…"}
+                {userName ?? "Loading partner…"}
               </p>
               <p className="text-[11px] text-[#8e8b87] truncate">
-                {user?.email ?? ""}
+                {userEmail}
               </p>
             </div>
           </div>

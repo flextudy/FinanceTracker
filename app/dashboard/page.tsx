@@ -9,7 +9,9 @@ import { AddExpenseModal } from "@/components/dashboard/add-expense-modal";
 import { RecordSettlementModal } from "@/components/dashboard/record-settlement-modal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SpinningCounter } from "@/components/ui/spinning-counter";
 import { useCurrentUser } from "@/components/providers/current-user-provider";
+import { cn } from "@/lib/utils";
 import {
   Plus,
   ArrowLeftRight,
@@ -21,107 +23,21 @@ import {
   Wallet,
   Clock,
   ArrowRight,
+  Paperclip,
 } from "lucide-react";
+import { Attachment } from "@/types";
+import { ExpenseDetailsModal, DetailedExpense } from "@/components/dashboard/expense-details-modal";
+import { SettlementDetailsModal, DetailedSettlement } from "@/components/dashboard/settlement-details-modal";
 
-type DashboardExpense = {
-  id: string; description: string; paidBy: string; amount: number; formattedAmount: string; date: string; category: string;
-};
-type DashboardSettlement = { id: string; fromUser: string; toUser: string; amount: number; formattedAmount: string; date: string; };
+import { CustomSelect } from "@/components/ui/custom-select";
+
+type DashboardExpense = DetailedExpense;
+type DashboardSettlement = DetailedSettlement;
 type DashboardBalance = { id: string; name: string; email: string; initials: string; status: "receives" | "owes"; balance: string; subtitle: string; isCurrentUser: boolean; };
 
-const initialExpenses: DashboardExpense[] = [
-  {
-    id: "1",
-    description: "One LiveKit Subscription",
-    paidBy: "Aditya Sharma",
-    amount: 5000,
-    formattedAmount: "₹5,000",
-    date: "30 Aug 2026",
-    category: "Software/SaaS",
-  },
-  {
-    id: "2",
-    description: "Vercel Hosting",
-    paidBy: "Vishal Kumar Singh",
-    amount: 2500,
-    formattedAmount: "₹2,500",
-    date: "28 Aug 2026",
-    category: "Infrastructure",
-  },
-  {
-    id: "3",
-    description: "Domain Renewal",
-    paidBy: "Ujjwal Kumar Singh",
-    amount: 1200,
-    formattedAmount: "₹1,200",
-    date: "25 Aug 2026",
-    category: "Domain & Ops",
-  },
-];
-
-const initialSettlements: DashboardSettlement[] = [
-  {
-    id: "s1",
-    fromUser: "Vishal Kumar Singh",
-    toUser: "Aditya Sharma",
-    amount: 1000,
-    formattedAmount: "₹1,000",
-    date: "30 Aug 2026",
-  },
-  {
-    id: "s2",
-    fromUser: "Ujjwal Kumar Singh",
-    toUser: "Aditya Sharma",
-    amount: 1000,
-    formattedAmount: "₹1,000",
-    date: "28 Aug 2026",
-  },
-  {
-    id: "s3",
-    fromUser: "Aditya Sharma",
-    toUser: "Vishal Kumar Singh",
-    amount: 1334,
-    formattedAmount: "₹1,334",
-    date: "25 Aug 2026",
-  },
-];
-
-const partnerBalances: DashboardBalance[] = [
-  {
-    id: "p1",
-    name: "Aditya Sharma",
-    email: "aditya@partner.com",
-    initials: "AS",
-    status: "receives",
-    balance: "₹4,334",
-    subtitle: "Should receive from partners",
-    isCurrentUser: true,
-  },
-  {
-    id: "p2",
-    name: "Vishal Kumar Singh",
-    email: "vishal@partner.com",
-    initials: "VK",
-    status: "owes",
-    balance: "₹2,667",
-    subtitle: "Pending amount to pay",
-    isCurrentUser: false,
-  },
-  {
-    id: "p3",
-    name: "Ujjwal Kumar Singh",
-    email: "ujjwal@partner.com",
-    initials: "UK",
-    status: "owes",
-    balance: "₹1,667",
-    subtitle: "Pending amount to pay",
-    isCurrentUser: false,
-  },
-];
-
 export default function DashboardPage() {
-  const { user } = useCurrentUser();
-  const [selectedMonth, setSelectedMonth] = useState("August 2026");
+  const { user, isMounted } = useCurrentUser();
+  const [selectedMonth, setSelectedMonth] = useState("September 2026");
   const [expenses, setExpenses] = useState<DashboardExpense[]>([]);
   const [settlements, setSettlements] = useState<DashboardSettlement[]>([]);
   const [partnerBalances, setPartnerBalances] = useState<DashboardBalance[]>([]);
@@ -130,16 +46,19 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState<DashboardExpense | null>(null);
+  const [selectedSettlement, setSelectedSettlement] = useState<DashboardSettlement | null>(null);
 
   const greeting = useMemo(() => {
+    if (!isMounted) return "Welcome";
     const hour = new Date().getHours();
     return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  }, []);
+  }, [isMounted]);
   const currentBalance = partnerBalances.find((partner) => partner.isCurrentUser);
-  const paidByCurrentUser = expenses.filter((expense) => expense.paidBy === user?.name).reduce((total, expense) => total + expense.amount, 0);
+  const paidByCurrentUser = expenses.filter((expense) => expense.paidBy === (isMounted ? user?.name : "")).reduce((total, expense) => total + expense.amount, 0);
 
   useEffect(() => {
-    setIsLoading(true);
+    if (!user?.id) return;
     Promise.all([fetch("/api/summary"), fetch("/api/expenses"), fetch("/api/settlements")])
       .then(async ([summaryResponse, expenseResponse, settlementResponse]) => {
         if (!summaryResponse.ok || !expenseResponse.ok || !settlementResponse.ok) throw new Error("Unable to load dashboard data");
@@ -150,8 +69,8 @@ export default function DashboardPage() {
           const isReceiving = item.balance > 0;
           return { id: item.userId, name: item.name, email: "", initials: item.name.split(" ").map((part: string) => part[0]).join("").slice(0, 2), status: isReceiving ? "receives" : "owes", balance: `₹${Math.abs(item.balance).toLocaleString("en-IN")}`, subtitle: isReceiving ? "Should receive from partners" : "Pending amount to pay", isCurrentUser: item.userId === user?.id };
         }));
-        setExpenses(expenseData.map((item: { id: string; description: string; amountPaid: number; transactionId: string; category: string | null; expenseDate: string; paidBy: { name: string } }) => ({ id: item.id, description: item.description, paidBy: item.paidBy.name, amount: item.amountPaid, formattedAmount: `₹${item.amountPaid.toLocaleString("en-IN")}`, date: new Date(item.expenseDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }), category: item.category ?? "Uncategorised" })));
-        setSettlements(settlementData.map((item: { id: string; amountPaid: number; settledAt: string | null; fromUser: { name: string }; toUser: { name: string } }) => ({ id: item.id, fromUser: item.fromUser.name, toUser: item.toUser.name, amount: item.amountPaid, formattedAmount: `₹${item.amountPaid.toLocaleString("en-IN")}`, date: item.settledAt ? new Date(item.settledAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Pending" })));
+        setExpenses(expenseData.map((item: { id: string; description: string; amountPaid: number; transactionId: string; category: string | null; expenseDate: string; paidBy: { name: string }; attachments?: Attachment[] }) => ({ id: item.id, description: item.description, paidBy: item.paidBy.name, amount: item.amountPaid, formattedAmount: `₹${item.amountPaid.toLocaleString("en-IN")}`, date: new Date(item.expenseDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }), category: item.category ?? "Uncategorised", attachments: item.attachments || [] })));
+        setSettlements(settlementData.map((item: { id: string; amountPaid: number; settledAt: string | null; fromUser: { name: string }; toUser: { name: string }; attachments?: Attachment[] }) => ({ id: item.id, fromUser: item.fromUser.name, toUser: item.toUser.name, amount: item.amountPaid, formattedAmount: `₹${item.amountPaid.toLocaleString("en-IN")}`, date: item.settledAt ? new Date(item.settledAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Pending", attachments: item.attachments || [] })));
         setIsLoading(false);
       })
       .catch(() => {
@@ -166,6 +85,10 @@ export default function DashboardPage() {
   const handleAddSettlement = (newSettlement: DashboardSettlement) => {
     setSettlements((current) => [newSettlement, ...current]);
   };
+
+  const userName = isMounted && user?.name ? user.name : null;
+  const firstName = userName ? userName.split(" ")[0] : "there";
+  const userInitials = userName ? userName.split(" ").map((part) => part[0]).join("").slice(0, 2) : "--";
 
   return (
     <div className="min-h-screen bg-[#fff8f1] flex flex-col md:flex-row selection:bg-[#fee3b5] selection:text-[#1d1e1c]">
@@ -182,7 +105,7 @@ export default function DashboardPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold font-serif text-[#1d1e1c]">
-                {greeting}, {user?.name?.split(" ")[0] ?? "there"} 👋
+                {greeting}, {firstName} 👋
               </h1>
             </div>
             <p className="text-sm sm:text-base text-[#615f5c] mt-1">
@@ -193,64 +116,57 @@ export default function DashboardPage() {
           {/* Right Header Options (Month selector & User Pill) */}
           <div className="flex items-center gap-3">
             {/* Month Selector Dropdown */}
-            <div className="relative">
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="appearance-none bg-white border border-[#c0bbb6] text-[#1d1e1c] text-sm font-semibold rounded-[16px] pl-10 pr-10 py-2.5 shadow-sm hover:border-[#fa5d00] transition-colors cursor-pointer"
-              >
-                <option value="August 2026">August 2026</option>
-                <option value="July 2026">July 2026</option>
-                <option value="June 2026">June 2026</option>
-                <option value="May 2026">May 2026</option>
-              </select>
-              <Calendar className="w-4 h-4 text-[#fa5d00] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <ChevronDown className="w-4 h-4 text-[#8e8b87] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
+            <CustomSelect
+              options={["September 2026", "August 2026", "July 2026", "June 2026", "May 2026"]}
+              value={selectedMonth}
+              onChange={setSelectedMonth}
+              icon={<Calendar className="w-4 h-4 text-[#fa5d00]" />}
+              className="min-w-[165px]"
+            />
 
             {/* Profile Avatar Pill */}
             <div className="hidden sm:flex items-center gap-2.5 bg-white border border-[#e3d6c5] rounded-full p-1.5 pr-4 shadow-sm">
               <div className="w-8 h-8 rounded-full bg-[#fa5d00] text-white font-bold flex items-center justify-center text-xs">
-                {user?.name?.split(" ").map((part) => part[0]).join("").slice(0, 2) ?? "--"}
+                {userInitials}
               </div>
               <span className="text-sm font-semibold text-[#1d1e1c]">
-                {user?.name?.split(" ")[0] ?? "Partner"}
+                {userName ? firstName : "Partner"}
               </span>
             </div>
           </div>
         </div>
 
         {/* Quick Action Buttons Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-[#e3d6c5] rounded-[20px] p-4 sm:p-5 shadow-sm">
+        <div className="bg-white border border-[#e3d6c5] rounded-[20px] p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#fa5d00] animate-pulse" />
-            <span className="text-sm font-semibold text-[#1d1e1c]">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#fa5d00] animate-pulse shrink-0" />
+            <span className="text-sm font-semibold text-[#1d1e1c] whitespace-nowrap">
               Quick Actions
             </span>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center sm:gap-3">
             <Button
               variant="primary"
               size="md"
               onClick={() => setIsExpenseModalOpen(true)}
-              className="flex-1 sm:flex-none"
+              className="px-3 py-2.5 text-sm sm:px-6 sm:py-3 sm:text-base whitespace-normal text-center"
             >
-              <Plus className="w-4 h-4" /> Add Expense
+              <Plus className="w-4 h-4 shrink-0" /> Add Expense
             </Button>
             <Button
               variant="secondary"
               size="md"
               onClick={() => setIsSettlementModalOpen(true)}
-              className="flex-1 sm:flex-none border-[#c0bbb6]"
+              className="px-3 py-2.5 text-sm sm:px-6 sm:py-3 sm:text-base border-[#c0bbb6] whitespace-normal text-center"
             >
-              <ArrowLeftRight className="w-4 h-4 text-[#fa5d00]" /> Record Settlement
+              <ArrowLeftRight className="w-4 h-4 text-[#fa5d00] shrink-0" /> Record Settlement
             </Button>
           </div>
         </div>
 
         {/* Financial Summary Cards Grid (4 Cards) */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
           {isLoading ? (
             Array.from({ length: 4 }).map((_, i) => (
               <Card key={i} variant="paper" className="p-5 border border-[#e3d6c5] shadow-sm relative overflow-hidden animate-pulse">
@@ -265,73 +181,73 @@ export default function DashboardPage() {
           ) : (
             <>
               {/* Card 1: Total Spent */}
-              <Card variant="paper" className="p-5 border border-[#e3d6c5] shadow-sm relative overflow-hidden group hover:border-[#fa5d00]/40 transition-colors">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">
+              <Card variant="paper" className="p-3.5 sm:p-5 border border-[#e3d6c5] shadow-sm relative overflow-hidden group hover:border-[#fa5d00]/40 transition-colors">
+                <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                  <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">
                     Total Spent
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-[#fff8f1] border border-[#e3d6c5] flex items-center justify-center text-[#1d1e1c]">
-                    <Receipt className="w-4 h-4" />
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#fff8f1] border border-[#e3d6c5] flex items-center justify-center text-[#1d1e1c]">
+                    <Receipt className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </div>
                 </div>
-                <p className="text-3xl font-bold text-[#1d1e1c] tracking-tight">
-                  ₹{totalSpent.toLocaleString("en-IN")}
+                <p className="text-xl sm:text-3xl font-bold text-[#1d1e1c] tracking-tight">
+                  <SpinningCounter text={`₹${totalSpent.toLocaleString("en-IN")}`} />
                 </p>
-                <p className="text-xs text-[#615f5c] mt-1.5 font-medium">
+                <p className="text-[10px] sm:text-xs text-[#615f5c] mt-1 sm:mt-1.5 font-medium">
                   Total expenses this month
                 </p>
               </Card>
 
               {/* Card 2: Your Contribution */}
-              <Card variant="paper" className="p-5 border border-[#e3d6c5] shadow-sm relative overflow-hidden group hover:border-[#fa5d00]/40 transition-colors">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">
-                    Your Contribution
+              <Card variant="paper" className="p-3.5 sm:p-5 border border-[#e3d6c5] shadow-sm relative overflow-hidden group hover:border-[#fa5d00]/40 transition-colors">
+                <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                  <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">
+                    Contribution
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-[#fff8f1] border border-[#e3d6c5] flex items-center justify-center text-[#fa5d00]">
-                    <Wallet className="w-4 h-4" />
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#fff8f1] border border-[#e3d6c5] flex items-center justify-center text-[#fa5d00]">
+                    <Wallet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </div>
                 </div>
-                <p className="text-3xl font-bold text-[#1d1e1c] tracking-tight">
-                  ₹{paidByCurrentUser.toLocaleString("en-IN")}
+                <p className="text-xl sm:text-3xl font-bold text-[#1d1e1c] tracking-tight">
+                  <SpinningCounter text={`₹${paidByCurrentUser.toLocaleString("en-IN")}`} />
                 </p>
-                <p className="text-xs text-[#615f5c] mt-1.5 font-medium">
+                <p className="text-[10px] sm:text-xs text-[#615f5c] mt-1 sm:mt-1.5 font-medium">
                   Amount paid by you
                 </p>
               </Card>
 
               {/* Card 3: You Owe */}
-              <Card variant="paper" className="p-5 border border-[#fee3b5] bg-white shadow-sm relative overflow-hidden group hover:border-[#fa5d00]/40 transition-colors">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[#fa5d00]">
+              <Card variant="paper" className="p-3.5 sm:p-5 border border-[#fee3b5] bg-white shadow-sm relative overflow-hidden group hover:border-[#fa5d00]/40 transition-colors">
+                <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                  <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-[#fa5d00]">
                     You Owe
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-[#fee3b5]/60 text-[#fa5d00] flex items-center justify-center">
-                    <ArrowUpRight className="w-4 h-4" />
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#fee3b5]/60 text-[#fa5d00] flex items-center justify-center">
+                    <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </div>
                 </div>
-                <p className="text-3xl font-bold text-[#fa5d00] tracking-tight">
-                  {currentBalance?.status === "owes" ? currentBalance.balance : "₹0"}
+                <p className="text-xl sm:text-3xl font-bold text-[#fa5d00] tracking-tight">
+                  <SpinningCounter text={currentBalance?.status === "owes" ? currentBalance.balance : "₹0"} />
                 </p>
-                <p className="text-xs text-[#615f5c] mt-1.5 font-medium">
+                <p className="text-[10px] sm:text-xs text-[#615f5c] mt-1 sm:mt-1.5 font-medium">
                   Pending amount to settle
                 </p>
               </Card>
 
               {/* Card 4: You Receive */}
-              <Card variant="paper" className="p-5 border border-emerald-200 bg-white shadow-sm relative overflow-hidden group hover:border-emerald-400 transition-colors">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
+              <Card variant="paper" className="p-3.5 sm:p-5 border border-emerald-200 bg-white shadow-sm relative overflow-hidden group hover:border-emerald-400 transition-colors">
+                <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                  <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-emerald-600">
                     You Receive
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                    <ArrowDownLeft className="w-4 h-4" />
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <ArrowDownLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </div>
                 </div>
-                <p className="text-3xl font-bold text-emerald-600 tracking-tight">
-                  {currentBalance?.status === "receives" ? currentBalance.balance : "₹0"}
+                <p className="text-xl sm:text-3xl font-bold text-emerald-600 tracking-tight">
+                  <SpinningCounter text={currentBalance?.status === "receives" ? currentBalance.balance : "₹0"} />
                 </p>
-                <p className="text-xs text-[#615f5c] mt-1.5 font-medium">
+                <p className="text-[10px] sm:text-xs text-[#615f5c] mt-1 sm:mt-1.5 font-medium">
                   Amount others owe you
                 </p>
               </Card>
@@ -363,86 +279,106 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 min-[340px]:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
-                <Card key={i} variant="paper" className="p-6 border border-[#e3d6c5] shadow-sm animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-full bg-[#e3d6c5]/40" />
-                    <div className="space-y-2 flex-1">
-                      <div className="h-4 w-24 bg-[#e3d6c5]/60 rounded" />
-                      <div className="h-3 w-36 bg-[#e3d6c5]/30 rounded" />
+                <Card
+                  key={i}
+                  variant="paper"
+                  className={cn(
+                    "p-3.5 sm:p-6 border border-[#e3d6c5] shadow-sm animate-pulse flex flex-col justify-between",
+                    i === 2 &&
+                    "min-[340px]:col-span-2 min-[340px]:w-full min-[340px]:max-w-[calc(50%-0.375rem)] min-[340px]:justify-self-center md:col-span-1 md:max-w-none"
+                  )}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-full bg-[#e3d6c5]/40 shrink-0" />
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="h-3.5 w-16 sm:w-24 bg-[#e3d6c5]/60 rounded" />
+                      <div className="h-2.5 w-24 sm:w-36 bg-[#e3d6c5]/30 rounded hidden sm:block" />
                     </div>
                   </div>
-                  <div className="mt-4 pt-3 border-t border-[#e3d6c5]/60 flex items-center justify-between">
-                    <div className="h-4 w-16 bg-[#e3d6c5]/50 rounded" />
-                    <div className="h-6 w-20 bg-[#e3d6c5]/40 rounded-full" />
+                  <div className="mt-3 pt-2.5 sm:mt-4 sm:pt-3 border-t border-[#e3d6c5]/60 flex items-center justify-between gap-2">
+                    <div className="h-4 w-12 sm:w-16 bg-[#e3d6c5]/50 rounded" />
+                    <div className="h-5 sm:h-6 w-16 sm:w-20 bg-[#e3d6c5]/40 rounded-full shrink-0" />
                   </div>
                 </Card>
               ))
             ) : (
-              partnerBalances.map((partner) => {
+              partnerBalances.map((partner, index) => {
                 const isReceiving = partner.status === "receives";
+                const isThirdOnMobile = index === 2;
 
                 return (
                   <Card
                     key={partner.id}
                     variant="paper"
-                    className={`p-6 border transition-all duration-200 ${partner.isCurrentUser
-                      ? "border-[#fa5d00]/40 shadow-[0px_4px_16px_rgba(250,93,0,0.1)] bg-[#fff8f1]/30"
-                      : "border-[#e3d6c5] shadow-sm"
-                      }`}
+                    className={cn(
+                      "p-3.5 sm:p-5 border transition-all duration-200 flex flex-col justify-between",
+                      partner.isCurrentUser
+                        ? "border-[#fa5d00]/40 shadow-[0px_4px_16px_rgba(250,93,0,0.1)] bg-[#fff8f1]/30"
+                        : "border-[#e3d6c5] shadow-sm",
+                      isThirdOnMobile &&
+                      "min-[340px]:col-span-2 min-[340px]:w-full min-[340px]:max-w-[calc(50%-0.375rem)] min-[340px]:justify-self-center md:col-span-1 md:max-w-none"
+                    )}
                   >
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-between mb-2 sm:mb-3">
+                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                         <div
-                          className={`w-11 h-11 rounded-full font-bold flex items-center justify-center text-sm shadow-sm ${isReceiving
-                            ? "bg-emerald-600 text-white"
-                            : "bg-[#fa5d00] text-white"
-                            }`}
+                          className={cn(
+                            "w-8 h-8 sm:w-10 sm:h-10 rounded-full font-bold flex items-center justify-center text-xs sm:text-sm shadow-sm shrink-0",
+                            isReceiving
+                              ? "bg-emerald-600 text-white"
+                              : "bg-[#fa5d00] text-white"
+                          )}
                         >
                           {partner.initials}
                         </div>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <h3 className="font-semibold text-[#1d1e1c] text-base">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <h3 className="font-semibold text-[#1d1e1c] text-xs sm:text-base leading-tight truncate">
                               {partner.name}
                             </h3>
                             {partner.isCurrentUser && (
-                              <span className="bg-[#fa5d00]/10 text-[#fa5d00] text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                              <span className="bg-[#fa5d00]/10 text-[#fa5d00] text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase shrink-0">
                                 You
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-[#8e8b87]">{partner.email}</p>
+                          {partner.email && (
+                            <p className="text-[10px] sm:text-xs text-[#8e8b87] truncate mt-0.5 hidden sm:block">
+                              {partner.email}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-[#e3d6c5]/60 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs text-[#8e8b87]">{partner.subtitle}</p>
-                        <p
-                          className={`text-xl font-bold mt-0.5 ${isReceiving ? "text-emerald-600" : "text-[#fa5d00]"
-                            }`}
-                        >
-                          {partner.balance}
-                        </p>
-                      </div>
+                    <div className="pt-2 sm:pt-2.5 border-t border-[#e3d6c5]/60 flex items-center justify-between gap-2">
+                      <p
+                        className={cn(
+                          "text-base sm:text-lg font-bold tracking-tight shrink-0",
+                          isReceiving ? "text-emerald-600" : "text-[#fa5d00]"
+                        )}
+                      >
+                        <SpinningCounter text={partner.balance} />
+                      </p>
 
                       <span
-                        className={`inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full border ${isReceiving
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : "bg-[#fee3b5]/60 text-[#fa5d00] border-[#fee3b5]"
-                          }`}
+                        className={cn(
+                          "inline-flex items-center gap-1 text-[10px] sm:text-xs font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full border shrink-0",
+                          isReceiving
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-[#fee3b5]/60 text-[#fa5d00] border-[#fee3b5]"
+                        )}
                       >
                         {isReceiving ? (
                           <>
-                            <ArrowDownLeft className="w-3.5 h-3.5" /> Receives {partner.balance}
+                            <ArrowDownLeft className="w-3 h-3 text-emerald-600 shrink-0" /> Receives
                           </>
                         ) : (
                           <>
-                            <ArrowUpRight className="w-3.5 h-3.5" /> Owes {partner.balance}
+                            <ArrowUpRight className="w-3 h-3 text-[#fa5d00] shrink-0" /> Owes
                           </>
                         )}
                       </span>
@@ -502,23 +438,35 @@ export default function DashboardPage() {
                       </thead>
                       <tbody className="divide-y divide-[#e3d6c5]/50">
                         {expenses.slice(0, 5).map((expense) => (
-                          <tr key={expense.id} className="hover:bg-[#fff8f1]/50 transition-colors">
+                          <tr
+                            key={expense.id}
+                            onClick={() => setSelectedExpense(expense)}
+                            className="hover:bg-[#fff8f1] cursor-pointer transition-all duration-150 group"
+                          >
                             <td className="px-5 py-4 font-semibold text-[#1d1e1c]">
-                              {expense.description}
-                              <span className="block text-[11px] font-normal text-[#8e8b87]">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="group-hover:text-[#fa5d00] transition-colors">{expense.description}</span>
+                                {expense.attachments && expense.attachments.length > 0 && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-[#fa5d00]/10 border border-[#fa5d00]/20 px-2 py-0.5 text-[10px] font-bold text-[#fa5d00] shrink-0">
+                                    <Paperclip className="h-3 w-3" />
+                                    {expense.attachments.length} {expense.attachments.length === 1 ? "file" : "files"}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="inline-block mt-0.5 text-[10px] font-bold uppercase tracking-wider text-[#8e8b87] bg-[#fff8f1] px-2 py-0.5 rounded-full border border-[#e3d6c5]/60">
                                 {expense.category}
                               </span>
                             </td>
                             <td className="px-5 py-4 text-[#615f5c]">
-                              <span className="inline-flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1.5 font-medium">
                                 <span className="w-2 h-2 rounded-full bg-[#fa5d00]" />
                                 {expense.paidBy}
                               </span>
                             </td>
-                            <td className="px-5 py-4 font-bold text-[#1d1e1c]">
+                            <td className="px-5 py-4 font-bold text-[#1d1e1c] tabular-nums">
                               {expense.formattedAmount}
                             </td>
-                            <td className="px-5 py-4 text-right text-xs text-[#8e8b87]">
+                            <td className="px-5 py-4 text-right text-xs text-[#8e8b87] font-medium">
                               {expense.date}
                             </td>
                           </tr>
@@ -530,12 +478,22 @@ export default function DashboardPage() {
                   {/* Mobile Card List View */}
                   <div className="sm:hidden divide-y divide-[#e3d6c5]/60">
                     {expenses.slice(0, 5).map((expense) => (
-                      <div key={expense.id} className="p-4 space-y-2">
+                      <div
+                        key={expense.id}
+                        onClick={() => setSelectedExpense(expense)}
+                        className="p-4 space-y-2 hover:bg-[#fff8f1] cursor-pointer transition-colors"
+                      >
                         <div className="flex items-center justify-between">
-                          <h4 className="font-semibold text-[#1d1e1c] text-sm">
+                          <h4 className="font-semibold text-[#1d1e1c] text-sm flex items-center gap-1.5">
                             {expense.description}
+                            {expense.attachments && expense.attachments.length > 0 && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-[#fa5d00]/10 px-1.5 py-0.5 text-[9px] font-bold text-[#fa5d00]">
+                                <Paperclip className="h-2.5 w-2.5" />
+                                {expense.attachments.length}
+                              </span>
+                            )}
                           </h4>
-                          <span className="font-bold text-[#1d1e1c] text-base">
+                          <span className="font-bold text-[#1d1e1c] text-base tabular-nums">
                             {expense.formattedAmount}
                           </span>
                         </div>
@@ -578,17 +536,18 @@ export default function DashboardPage() {
                   {settlements.slice(0, 5).map((settlement) => (
                     <div
                       key={settlement.id}
-                      className="bg-[#fff8f1] border border-[#e3d6c5]/70 rounded-[16px] p-4 flex items-center justify-between hover:border-[#fa5d00]/30 transition-colors"
+                      onClick={() => setSelectedSettlement(settlement)}
+                      className="bg-[#fff8f1] border border-[#e3d6c5]/70 rounded-[16px] p-4 flex items-center justify-between hover:border-[#fa5d00]/40 hover:shadow-sm cursor-pointer transition-all duration-150 group"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center shrink-0">
+                        <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                           <ArrowLeftRight className="w-4 h-4" />
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5 text-sm font-semibold text-[#1d1e1c]">
-                            <span>{settlement.fromUser}</span>
+                            <span>{settlement.fromUser || settlement.from}</span>
                             <span className="text-[#fa5d00] font-bold">→</span>
-                            <span>{settlement.toUser}</span>
+                            <span>{settlement.toUser || settlement.to}</span>
                           </div>
                           <p className="text-xs text-[#8e8b87] flex items-center gap-1 mt-0.5">
                             <Clock className="w-3 h-3 text-[#8e8b87]" /> {settlement.date}
@@ -597,12 +556,20 @@ export default function DashboardPage() {
                       </div>
 
                       <div className="text-right">
-                        <span className="text-base font-bold text-emerald-600 block">
-                          {settlement.formattedAmount}
+                        <span className="text-base font-bold text-emerald-600 block tabular-nums">
+                          {settlement.formattedAmount || `₹${settlement.amount.toLocaleString("en-IN")}`}
                         </span>
-                        <span className="inline-block bg-emerald-100/60 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                          Settled
-                        </span>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {settlement.attachments && settlement.attachments.length > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[#fa5d00]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#fa5d00]">
+                              <Paperclip className="h-3 w-3" />
+                              {settlement.attachments.length}
+                            </span>
+                          )}
+                          <span className="inline-block bg-emerald-100/60 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                            Settled
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -625,6 +592,17 @@ export default function DashboardPage() {
         isOpen={isSettlementModalOpen}
         onClose={() => setIsSettlementModalOpen(false)}
         onSuccess={handleAddSettlement}
+      />
+
+      {/* Detailed View Modals */}
+      <ExpenseDetailsModal
+        expense={selectedExpense}
+        onClose={() => setSelectedExpense(null)}
+      />
+
+      <SettlementDetailsModal
+        settlement={selectedSettlement}
+        onClose={() => setSelectedSettlement(null)}
       />
     </div>
   );
