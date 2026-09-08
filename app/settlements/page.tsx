@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { MobileNav } from "@/components/dashboard/mobile-nav";
 import { Button } from "@/components/ui/button";
@@ -8,22 +8,23 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useCurrentUser } from "@/components/providers/current-user-provider";
 import { Attachment } from "@/types";
-import { AttachmentSection } from "@/components/ui/attachment-section";
+import { PendingSettlementsBanner, PendingSettlementItem } from "@/components/dashboard/pending-settlements-banner";
+import { SettlementDetailsModal, DetailedSettlement } from "@/components/dashboard/settlement-details-modal";
+import { RecordSettlementModal } from "@/components/dashboard/record-settlement-modal";
 import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowRight,
   CheckCircle2,
-  ChevronDown,
   Clock3,
   Eye,
   HandCoins,
-  MoreHorizontal,
   Paperclip,
   Plus,
   Search,
   Wallet,
-  X,
+  XCircle,
+  Loader2,
 } from "lucide-react";
 
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -31,10 +32,12 @@ import { CustomSelect } from "@/components/ui/custom-select";
 type Settlement = {
   id: string;
   from: string;
+  fromUserId?: string;
   to: string;
+  toUserId?: string;
   amount: number;
   date: string;
-  status: "Completed";
+  status: "PENDING" | "COMPLETED" | "CANCELLED" | string;
   attachments?: Attachment[];
 };
 
@@ -58,8 +61,9 @@ const money = (amount: number) => `₹${amount.toLocaleString("en-IN")}`;
 function Avatar({ name, small = false }: { name: string; small?: boolean }) {
   return (
     <span
-      className={`${small ? "h-7 w-7 text-[10px]" : "h-10 w-10 text-xs"
-        } inline-flex shrink-0 items-center justify-center rounded-full bg-[#fa5d00] font-bold text-white`}
+      className={`${
+        small ? "h-7 w-7 text-[10px]" : "h-10 w-10 text-xs"
+      } inline-flex shrink-0 items-center justify-center rounded-full bg-[#fa5d00] font-bold text-white shadow-sm`}
     >
       {initials(name)}
     </span>
@@ -69,18 +73,24 @@ function Avatar({ name, small = false }: { name: string; small?: boolean }) {
 export default function SettlementsPage() {
   const { user } = useCurrentUser();
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [pendingSettlements, setPendingSettlements] = useState<PendingSettlementItem[]>([]);
   const [balances, setBalances] = useState<PartnerBalance[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [date, setDate] = useState("All dates");
-  const [partner, setPartner] = useState("All partners");
+  const [dateFilter, setDateFilter] = useState("All dates");
+  const [partnerFilter, setPartnerFilter] = useState("All partners");
+  const [statusFilter, setStatusFilter] = useState("All statuses");
   const [modalOpen, setModalOpen] = useState(false);
-  const [details, setDetails] = useState<Settlement | null>(null);
-  const [menuId, setMenuId] = useState<string | null>(null);
+  const [details, setDetails] = useState<DetailedSettlement | null>(null);
 
-  useEffect(() => {
-    Promise.all([fetch("/api/settlements"), fetch("/api/summary")])
-      .then(async ([settlementResponse, summaryResponse]) => {
+  const loadSettlementsData = useCallback(() => {
+    setIsLoading(true);
+    const pendingPromise = user?.id
+      ? fetch(`/api/settlements/pending/${user.id}`).then((res) => (res.ok ? res.json() : { settlements: [] }))
+      : Promise.resolve({ settlements: [] });
+
+    Promise.all([fetch("/api/settlements"), fetch("/api/summary"), pendingPromise])
+      .then(async ([settlementResponse, summaryResponse, pendingData]) => {
         if (!settlementResponse.ok || !summaryResponse.ok)
           throw new Error("Failed to load data");
         const [settlementData, summaryData] = await Promise.all([
@@ -95,26 +105,37 @@ export default function SettlementsPage() {
               amountPaid: number;
               status: string;
               settledAt: string | null;
-              fromUser: { name: string };
-              toUser: { name: string };
+              createdAt?: string;
+              fromUser: { id: string; name: string };
+              toUser: { id: string; name: string };
               attachments?: Attachment[];
             }) => ({
               id: item.id,
               from: item.fromUser.name,
+              fromUserId: item.fromUser.id,
               to: item.toUser.name,
+              toUserId: item.toUser.id,
               amount: item.amountPaid,
-              status: "Completed" as const,
+              status: item.status || "COMPLETED",
               date: item.settledAt
                 ? new Date(item.settledAt).toLocaleDateString("en-GB", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                })
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : item.createdAt
+                ? new Date(item.createdAt).toLocaleDateString("en-GB", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })
                 : "Pending",
               attachments: item.attachments || [],
             })
           )
         );
+
+        setPendingSettlements(pendingData.settlements || []);
 
         setBalances(
           (summaryData.balance ?? []).map(
@@ -134,24 +155,43 @@ export default function SettlementsPage() {
       .catch(() => {
         setIsLoading(false);
       });
-  }, []);
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadSettlementsData();
+  }, [loadSettlementsData]);
 
   const filtered = useMemo(() => {
-    return settlements.filter(
-      (settlement) =>
-        `${settlement.from} ${settlement.to}`
-          .toLowerCase()
-          .includes(query.toLowerCase()) &&
-        (partner === "All partners" ||
-          settlement.from === partner ||
-          settlement.to === partner) &&
-        (date === "All dates" || settlement.date.includes("Aug 2026"))
-    );
-  }, [settlements, query, partner, date]);
+    return settlements.filter((settlement) => {
+      const searchMatch = `${settlement.from} ${settlement.to}`
+        .toLowerCase()
+        .includes(query.toLowerCase());
+
+      const partnerMatch =
+        partnerFilter === "All partners" ||
+        settlement.from === partnerFilter ||
+        settlement.to === partnerFilter;
+
+      const dateMatch =
+        dateFilter === "All dates" || settlement.date.includes("Sep 2026") || settlement.date.includes("Aug 2026");
+
+      const st = (settlement.status || "COMPLETED").toUpperCase();
+      const statusMatch =
+        statusFilter === "All statuses" ||
+        (statusFilter === "Pending" && st === "PENDING") ||
+        (statusFilter === "Completed" && st === "COMPLETED") ||
+        (statusFilter === "Cancelled" && (st === "CANCELLED" || st === "REJECTED"));
+
+      return searchMatch && partnerMatch && dateMatch && statusMatch;
+    });
+  }, [settlements, query, partnerFilter, dateFilter, statusFilter]);
 
   // Dynamic values based on active user context
   const summaryStats = useMemo(() => {
-    const totalSettled = settlements.reduce((acc, curr) => acc + curr.amount, 0);
+    const completedSettlements = settlements.filter(
+      (s) => (s.status || "").toUpperCase() === "COMPLETED"
+    );
+    const totalSettled = completedSettlements.reduce((acc, curr) => acc + curr.amount, 0);
 
     const currentUserBalance = balances.find((b) => b.name === user?.name);
     let pendingToPay = 0;
@@ -173,12 +213,16 @@ export default function SettlementsPage() {
   }, [settlements, balances, user]);
 
   const filtersActive =
-    Boolean(query) || date !== "All dates" || partner !== "All partners";
+    Boolean(query) ||
+    dateFilter !== "All dates" ||
+    partnerFilter !== "All partners" ||
+    statusFilter !== "All statuses";
 
   const clearFilters = () => {
     setQuery("");
-    setDate("All dates");
-    setPartner("All partners");
+    setDateFilter("All dates");
+    setPartnerFilter("All partners");
+    setStatusFilter("All statuses");
   };
 
   return (
@@ -203,6 +247,15 @@ export default function SettlementsPage() {
               <Plus className="h-4 w-4" /> Record Settlement
             </Button>
           </header>
+
+          {/* Pending Approvals Banner */}
+          {user?.id && (
+            <PendingSettlementsBanner
+              pendingSettlements={pendingSettlements}
+              currentUserId={user.id}
+              onSettlementAction={loadSettlementsData}
+            />
+          )}
 
           {/* Dynamic Summary Cards with Skeleton */}
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -231,7 +284,7 @@ export default function SettlementsPage() {
                         {summaryStats.totalSettled}
                       </p>
                       <p className="mt-1 text-xs font-medium text-[#615f5c]">
-                        Total settlements recorded
+                        Completed settlements recorded
                       </p>
                     </div>
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e3d6c5] bg-[#fff8f1] text-[#fa5d00]">
@@ -341,24 +394,30 @@ export default function SettlementsPage() {
                     className="py-2.5 pl-10 text-sm"
                   />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                   <CustomSelect
                     options={["All dates", "September 2026", "August 2026"]}
-                    value={date}
-                    onChange={setDate}
+                    value={dateFilter}
+                    onChange={setDateFilter}
                     ariaLabel="Filter by date"
                   />
                   <CustomSelect
                     options={["All partners", ...partners]}
-                    value={partner}
-                    onChange={setPartner}
+                    value={partnerFilter}
+                    onChange={setPartnerFilter}
                     ariaLabel="Filter by partner"
+                  />
+                  <CustomSelect
+                    options={["All statuses", "Pending", "Completed", "Cancelled"]}
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    ariaLabel="Filter by status"
                   />
                 </div>
                 {filtersActive && (
                   <button
                     onClick={clearFilters}
-                    className="self-center whitespace-nowrap text-xs font-semibold text-[#fa5d00] hover:underline"
+                    className="self-center whitespace-nowrap text-xs font-semibold text-[#fa5d00] hover:underline cursor-pointer"
                   >
                     Clear filters
                   </button>
@@ -391,7 +450,21 @@ export default function SettlementsPage() {
                         <SettlementRow
                           key={settlement.id}
                           settlement={settlement}
-                          onView={() => setDetails(settlement)}
+                          currentUserId={user?.id}
+                          onView={() =>
+                            setDetails({
+                              id: settlement.id,
+                              fromUser: settlement.from,
+                              fromUserId: settlement.fromUserId,
+                              toUser: settlement.to,
+                              toUserId: settlement.toUserId,
+                              amount: settlement.amount,
+                              status: settlement.status,
+                              date: settlement.date,
+                              attachments: settlement.attachments,
+                            })
+                          }
+                          onActionComplete={loadSettlementsData}
                         />
                       ))}
                     </tbody>
@@ -402,7 +475,21 @@ export default function SettlementsPage() {
                     <SettlementMobileCard
                       key={settlement.id}
                       settlement={settlement}
-                      onView={() => setDetails(settlement)}
+                      currentUserId={user?.id}
+                      onView={() =>
+                        setDetails({
+                          id: settlement.id,
+                          fromUser: settlement.from,
+                          fromUserId: settlement.fromUserId,
+                          toUser: settlement.to,
+                          toUserId: settlement.toUserId,
+                          amount: settlement.amount,
+                          status: settlement.status,
+                          date: settlement.date,
+                          attachments: settlement.attachments,
+                        })
+                      }
+                      onActionComplete={loadSettlementsData}
                     />
                   ))}
                 </div>
@@ -433,14 +520,15 @@ export default function SettlementsPage() {
                     <div className="h-4 w-2/3 bg-[#e3d6c5]/40 rounded" />
                   </div>
                 ) : settlements.length ? (
-                  settlements.slice(0, 3).map((s, idx) => (
+                  settlements.slice(0, 4).map((s, idx) => (
                     <Activity
                       key={s.id}
                       day={s.date}
                       from={s.from.split(" ")[0]}
                       to={s.to.split(" ")[0]}
                       amount={money(s.amount)}
-                      last={idx === Math.min(settlements.length, 3) - 1}
+                      status={s.status}
+                      last={idx === Math.min(settlements.length, 4) - 1}
                     />
                   ))
                 ) : (
@@ -466,22 +554,20 @@ export default function SettlementsPage() {
       </main>
 
       {details && (
-        <SettlementDetails
+        <SettlementDetailsModal
           settlement={details}
           onClose={() => setDetails(null)}
-          onUpdateSettlement={(updated) => {
-            setSettlements((current) =>
-              current.map((s) => (s.id === updated.id ? updated : s))
-            );
-            setDetails(updated);
+          onUpdateSettlement={() => {
+            loadSettlementsData();
           }}
         />
       )}
       {modalOpen && (
         <RecordSettlementModal
+          isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
-          onRecord={(settlement) => {
-            setSettlements((current) => [settlement, ...current]);
+          onSuccess={() => {
+            loadSettlementsData();
             setModalOpen(false);
           }}
         />
@@ -515,8 +601,9 @@ function BalanceCard({
           </div>
         </div>
         <span
-          className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${receives ? "bg-emerald-50 text-emerald-700" : "bg-[#fa5d00]/10 text-[#fa5d00]"
-            }`}
+          className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+            receives ? "bg-emerald-50 text-emerald-700" : "bg-[#fa5d00]/10 text-[#fa5d00]"
+          }`}
         >
           {status}
         </span>
@@ -536,11 +623,41 @@ function PartnerCell({ name }: { name: string }) {
 
 function SettlementRow({
   settlement,
+  currentUserId,
   onView,
+  onActionComplete,
 }: {
   settlement: Settlement;
+  currentUserId?: string;
   onView?: () => void;
+  onActionComplete?: () => void;
 }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const st = (settlement.status || "COMPLETED").toUpperCase();
+  const isPending = st === "PENDING";
+  const isCancelled = st === "CANCELLED" || st === "REJECTED";
+  const isRecipient = currentUserId && settlement.toUserId === currentUserId;
+
+  const handleQuickAction = async (e: React.MouseEvent, type: "confirm" | "reject") => {
+    e.stopPropagation();
+    if (!currentUserId) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/settlements/${settlement.id}/${type}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUserId }),
+      });
+      if (res.ok && onActionComplete) {
+        onActionComplete();
+      }
+    } catch {
+      // ignore error silently
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <tr
       onClick={onView}
@@ -567,25 +684,59 @@ function SettlementRow({
         </div>
       </td>
       <td className="px-4 py-4">
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          {settlement.status}
-        </span>
+        {isPending ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 border border-amber-300">
+            <Clock3 className="h-3.5 w-3.5 text-amber-600" />
+            Pending
+          </span>
+        ) : isCancelled ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 border border-red-200">
+            <XCircle className="h-3.5 w-3.5" />
+            Rejected
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Completed
+          </span>
+        )}
       </td>
       <td className="whitespace-nowrap px-4 py-4 text-sm text-[#615f5c]">
         {settlement.date}
       </td>
       <td className="relative px-4 py-4 text-right">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onView) onView();
-          }}
-          className="inline-flex items-center gap-1 rounded-xl border border-[#e3d6c5] bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all shadow-sm cursor-pointer"
-          aria-label="View settlement details"
-        >
-          <Eye className="h-3.5 w-3.5" /> Details
-        </button>
+        <div className="flex items-center justify-end gap-2">
+          {isPending && isRecipient && (
+            <>
+              <button
+                onClick={(e) => handleQuickAction(e, "confirm")}
+                disabled={isSubmitting}
+                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
+              >
+                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Confirm
+              </button>
+              <button
+                onClick={(e) => handleQuickAction(e, "reject")}
+                disabled={isSubmitting}
+                className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 transition-all shadow-sm cursor-pointer"
+              >
+                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                Reject
+              </button>
+            </>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onView) onView();
+            }}
+            className="inline-flex items-center gap-1 rounded-xl border border-[#e3d6c5] bg-white px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all shadow-sm cursor-pointer"
+            aria-label="View settlement details"
+          >
+            <Eye className="h-3.5 w-3.5" /> Details
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -593,15 +744,51 @@ function SettlementRow({
 
 function SettlementMobileCard({
   settlement,
+  currentUserId,
   onView,
+  onActionComplete,
 }: {
   settlement: Settlement;
+  currentUserId?: string;
   onView?: () => void;
+  onActionComplete?: () => void;
 }) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const st = (settlement.status || "COMPLETED").toUpperCase();
+  const isPending = st === "PENDING";
+  const isCancelled = st === "CANCELLED" || st === "REJECTED";
+  const isRecipient = currentUserId && settlement.toUserId === currentUserId;
+
+  const handleQuickAction = async (e: React.MouseEvent, type: "confirm" | "reject") => {
+    e.stopPropagation();
+    if (!currentUserId) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/settlements/${settlement.id}/${type}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUserId }),
+      });
+      if (res.ok && onActionComplete) {
+        onActionComplete();
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <Card
       onClick={onView}
-      className="p-4 border border-[#e3d6c5] shadow-sm hover:border-emerald-400 transition-all cursor-pointer"
+      className={`p-4 border shadow-sm transition-all cursor-pointer ${
+        isPending
+          ? "border-amber-300 bg-amber-50/30"
+          : isCancelled
+          ? "border-red-200"
+          : "border-[#e3d6c5]"
+      }`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
@@ -632,10 +819,40 @@ function SettlementMobileCard({
         </div>
         <p className="font-semibold text-[#1d1e1c]">{settlement.to}</p>
       </div>
+
+      {isPending && isRecipient && (
+        <div className="mt-3 flex items-center gap-2 border-t border-amber-200 pt-3">
+          <button
+            onClick={(e) => handleQuickAction(e, "confirm")}
+            disabled={isSubmitting}
+            className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-600 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+          >
+            {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Confirm Receipt
+          </button>
+          <button
+            onClick={(e) => handleQuickAction(e, "reject")}
+            disabled={isSubmitting}
+            className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl border border-red-200 bg-white py-1.5 text-xs font-bold text-red-700 hover:bg-red-50"
+          >
+            {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />} Reject
+          </button>
+        </div>
+      )}
+
       <div className="mt-4 flex items-center justify-between border-t border-[#e3d6c5]/70 pt-3">
-        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-          <CheckCircle2 className="h-3.5 w-3.5" /> Completed
-        </span>
+        {isPending ? (
+          <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800">
+            <Clock3 className="h-3.5 w-3.5 text-amber-600" /> Pending Approval
+          </span>
+        ) : isCancelled ? (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700">
+            <XCircle className="h-3.5 w-3.5" /> Rejected
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Completed
+          </span>
+        )}
         <div className="flex items-center gap-2">
           {settlement.attachments && settlement.attachments.length > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full bg-[#fa5d00]/10 px-2 py-0.5 text-[10px] font-bold text-[#fa5d00]">
@@ -655,22 +872,39 @@ function Activity({
   from,
   to,
   amount,
+  status,
   last = false,
 }: {
   day: string;
   from: string;
   to: string;
   amount: string;
+  status?: string;
   last?: boolean;
 }) {
+  const st = (status || "COMPLETED").toUpperCase();
+  const isPending = st === "PENDING";
+  const isCancelled = st === "CANCELLED" || st === "REJECTED";
+
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center">
-        <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-[#fa5d00]" />
+        <span
+          className={`mt-1.5 h-2.5 w-2.5 rounded-full ${
+            isPending ? "bg-amber-500" : isCancelled ? "bg-red-500" : "bg-[#fa5d00]"
+          }`}
+        />
         {!last && <span className="my-1 h-full w-px bg-[#e3d6c5]" />}
       </div>
       <div className="flex-1 pb-5">
-        <p className="text-xs font-semibold text-[#8e8b87]">{day}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-[#8e8b87]">{day}</p>
+          {isPending && (
+            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full uppercase">
+              Pending
+            </span>
+          )}
+        </div>
         <p className="mt-0.5 text-sm text-[#1d1e1c]">
           <span className="font-semibold">{from}</span> paid{" "}
           <span className="font-semibold">{amount}</span> to{" "}
@@ -695,7 +929,7 @@ function Empty({
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff8f1] text-[#fa5d00]">
         <ArrowLeftRight className="h-6 w-6" />
       </div>
-      <h3 className="mt-4 text-lg font-bold text-[#1d1e1c]">No settlements yet</h3>
+      <h3 className="mt-4 text-lg font-bold text-[#1d1e1c]">No settlements found</h3>
       <p className="mx-auto mt-1 max-w-sm text-sm text-[#615f5c]">
         {filtersActive
           ? "No settlements match your current filters."
@@ -714,322 +948,3 @@ function Empty({
     </Card>
   );
 }
-
-function SettlementDetails({
-  settlement,
-  onClose,
-  onUpdateSettlement,
-}: {
-  settlement: Settlement;
-  onClose: () => void;
-  onUpdateSettlement?: (updated: Settlement) => void;
-}) {
-  const handleUpload = async (file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch(`/api/settlements/${settlement.id}/attachments`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || errorData.message || "Failed to upload attachment.");
-    }
-
-    const data = await response.json();
-    const newAtt = data.attachment as Attachment;
-    const updated = {
-      ...settlement,
-      attachments: [newAtt, ...(settlement.attachments || [])],
-    };
-    if (onUpdateSettlement) {
-      onUpdateSettlement(updated);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end bg-[#1d1e1c]/45 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Settlement details"
-    >
-      <div className="w-full max-w-lg rounded-t-[24px] border border-[#e3d6c5] bg-white p-5 shadow-2xl sm:rounded-[24px] sm:p-7">
-        <div className="flex items-start justify-between gap-4 border-b border-[#e3d6c5] pb-4">
-          <div>
-            <h2 className="text-xl font-bold text-[#1d1e1c]">Settlement details</h2>
-            <p className="mt-1 text-sm text-[#615f5c]">Direct payment record between partners.</p>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="rounded-full p-1.5 text-[#8e8b87] hover:bg-[#fff8f1] cursor-pointer"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="space-y-5 py-5 max-h-[75vh] overflow-y-auto pr-1">
-          <div className="rounded-[16px] border border-emerald-200 bg-emerald-50/50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">
-              Transfer Amount
-            </p>
-            <div className="mt-1 flex items-center justify-between">
-              <p className="text-2xl font-bold text-emerald-700">{money(settlement.amount)}</p>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                {settlement.status}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">Paid by (From)</p>
-              <p className="mt-1 font-semibold text-[#1d1e1c]">{settlement.from}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">Paid to (Recipient)</p>
-              <p className="mt-1 font-semibold text-[#1d1e1c]">{settlement.to}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">Settled Date</p>
-              <p className="mt-1 font-semibold text-[#1d1e1c]">{settlement.date}</p>
-            </div>
-          </div>
-
-          {/* Attachment Section */}
-          <AttachmentSection
-            attachments={settlement.attachments}
-            onUpload={handleUpload}
-            title="Settlement Attachments"
-          />
-
-          <div className="flex justify-end border-t border-[#e3d6c5] pt-4">
-            <Button variant="secondary" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RecordSettlementModal({
-  onClose,
-  onRecord,
-}: {
-  onClose: () => void;
-  onRecord: (settlement: Settlement) => void;
-}) {
-  const [from, setFrom] = useState("Vishal Kumar Singh");
-  const [to, setTo] = useState("Aditya Sharma");
-  const [amount, setAmount] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
-
-  useEffect(() => {
-    fetch("/api/users")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setUsers(data))
-      .catch(() => { });
-  }, []);
-
-  const valid = Number(amount) > 0 && from !== to;
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!valid) return;
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      const fromUserObj = users.find((u) => u.name === from);
-      const toUserObj = users.find((u) => u.name === to);
-
-      let createdSettlementId = Date.now().toString();
-      let createdAttachments: Attachment[] = [];
-
-      if (fromUserObj && toUserObj) {
-        const response = await fetch("/api/settlements", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fromUserId: fromUserObj.id,
-            toUserId: toUserObj.id,
-            amount: Number(amount),
-          }),
-        });
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.error || errData.message || "Failed to create settlement.");
-        }
-
-        const data = await response.json();
-        const createdObj = data.settlement || data;
-        createdSettlementId = createdObj.id;
-
-        if (file) {
-          const formData = new FormData();
-          formData.append("file", file);
-          const attRes = await fetch(`/api/settlements/${createdSettlementId}/attachments`, {
-            method: "POST",
-            body: formData,
-          });
-          if (attRes.ok) {
-            const attData = await attRes.json();
-            if (attData.attachment) {
-              createdAttachments.push(attData.attachment);
-            }
-          }
-        }
-      }
-
-      onRecord({
-        id: createdSettlementId,
-        from,
-        to,
-        amount: Number(amount),
-        status: "Completed",
-        date: new Date().toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
-        attachments: createdAttachments,
-      });
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end bg-[#1d1e1c]/45 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Record settlement"
-    >
-      <div className="w-full max-w-lg rounded-t-[24px] border border-[#e3d6c5] bg-white p-5 shadow-2xl sm:rounded-[24px] sm:p-7">
-        <div className="flex items-start justify-between gap-4 border-b border-[#e3d6c5] pb-4">
-          <div>
-            <h2 className="text-xl font-bold text-[#1d1e1c]">Record settlement</h2>
-            <p className="mt-1 text-sm text-[#615f5c]">Record a payment between partners.</p>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="rounded-full p-1.5 text-[#8e8b87] hover:bg-[#fff8f1] cursor-pointer"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <form onSubmit={submit} className="space-y-4 pt-5 max-h-[75vh] overflow-y-auto pr-1">
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600">
-              {error}
-            </div>
-          )}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <FormField label="Paid by">
-              <select
-                value={from}
-                onChange={(event) => setFrom(event.target.value)}
-                className="w-full rounded-[16px] border border-[#c0bbb6] bg-white px-4 py-3.5 text-sm outline-none focus:border-[#fa5d00]"
-              >
-                {partners.map((name) => (
-                  <option key={name}>{name}</option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="Paid to">
-              <select
-                value={to}
-                onChange={(event) => setTo(event.target.value)}
-                className="w-full rounded-[16px] border border-[#c0bbb6] bg-white px-4 py-3.5 text-sm outline-none focus:border-[#fa5d00]"
-              >
-                {partners
-                  .filter((name) => name !== from)
-                  .map((name) => (
-                    <option key={name}>{name}</option>
-                  ))}
-              </select>
-            </FormField>
-          </div>
-          <FormField label="Amount (₹)">
-            <Input
-              type="number"
-              min="1"
-              placeholder="e.g. 1000"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              required
-            />
-          </FormField>
-          {from === to && (
-            <p className="text-xs font-medium text-red-600">
-              Choose two different partners for this settlement.
-            </p>
-          )}
-
-          {/* Optional File Attachment Input */}
-          <FormField label="Attachment (Optional Proof / Receipt)">
-            <input
-              type="file"
-              accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="w-full text-xs text-[#615f5c] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#fa5d00]/10 file:text-[#fa5d00] hover:file:bg-[#fa5d00]/20 cursor-pointer"
-            />
-          </FormField>
-
-          <div className="rounded-[16px] border border-[#e3d6c5] bg-[#fff8f1] p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#8e8b87]">
-              Settlement Summary
-            </p>
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[#1d1e1c]">
-                {from.split(" ")[0]}{" "}
-                <ArrowRight className="mx-1 inline h-3.5 w-3.5 text-[#fa5d00]" />{" "}
-                {to.split(" ")[0]}
-              </p>
-              <p className="text-base font-bold text-[#fa5d00]">
-                {valid ? money(Number(amount)) : "₹0"}
-              </p>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3 border-t border-[#e3d6c5] pt-4">
-            <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!valid || isSubmitting}>
-              {isSubmitting ? "Recording..." : <><CheckCircle2 className="h-4 w-4" /> Confirm Settlement</>}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function FormField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block text-xs font-semibold uppercase tracking-wider text-[#1d1e1c]">
-      <span className="mb-1.5 block">{label}</span>
-      {children}
-    </label>
-  );
-}
-

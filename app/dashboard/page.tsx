@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { MobileNav } from "@/components/dashboard/mobile-nav";
 import { SpendingChart } from "@/components/dashboard/spending-chart";
 import { AddExpenseModal } from "@/components/dashboard/add-expense-modal";
 import { RecordSettlementModal } from "@/components/dashboard/record-settlement-modal";
+import { PendingSettlementsBanner, PendingSettlementItem } from "@/components/dashboard/pending-settlements-banner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SpinningCounter } from "@/components/ui/spinning-counter";
@@ -16,7 +17,6 @@ import {
   Plus,
   ArrowLeftRight,
   Calendar,
-  ChevronDown,
   ArrowUpRight,
   ArrowDownLeft,
   Receipt,
@@ -24,6 +24,9 @@ import {
   Clock,
   ArrowRight,
   Paperclip,
+  CheckCircle2,
+  Clock3,
+  XCircle,
 } from "lucide-react";
 import { Attachment } from "@/types";
 import { ExpenseDetailsModal, DetailedExpense } from "@/components/dashboard/expense-details-modal";
@@ -40,6 +43,7 @@ export default function DashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState("September 2026");
   const [expenses, setExpenses] = useState<DashboardExpense[]>([]);
   const [settlements, setSettlements] = useState<DashboardSettlement[]>([]);
+  const [pendingSettlements, setPendingSettlements] = useState<PendingSettlementItem[]>([]);
   const [partnerBalances, setPartnerBalances] = useState<DashboardBalance[]>([]);
   const [monthlyExpenses, setMonthlyExpenses] = useState<{ month: string; amount: number }[]>([]);
   const [totalSpent, setTotalSpent] = useState(0);
@@ -57,33 +61,113 @@ export default function DashboardPage() {
   const currentBalance = partnerBalances.find((partner) => partner.isCurrentUser);
   const paidByCurrentUser = expenses.filter((expense) => expense.paidBy === (isMounted ? user?.name : "")).reduce((total, expense) => total + expense.amount, 0);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    Promise.all([fetch("/api/summary"), fetch("/api/expenses"), fetch("/api/settlements")])
-      .then(async ([summaryResponse, expenseResponse, settlementResponse]) => {
-        if (!summaryResponse.ok || !expenseResponse.ok || !settlementResponse.ok) throw new Error("Unable to load dashboard data");
-        const [summary, expenseData, settlementData] = await Promise.all([summaryResponse.json(), expenseResponse.json(), settlementResponse.json()]);
-        setTotalSpent(summary.totalSpent ?? 0);
-        setMonthlyExpenses(summary.monthlyExpenses ?? []);
-        setPartnerBalances((summary.balance ?? []).map((item: { userId: string; name: string; balance: number; }) => {
+  const loadDashboardData = useCallback(async (currentUserId?: string) => {
+    setIsLoading(true);
+    try {
+      const url = currentUserId ? `/api/dashboard?userId=${currentUserId}` : "/api/dashboard";
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Unable to load dashboard data");
+      
+      const { summary, expenses: expenseData, settlements: settlementData, pendingSettlements: pendingData } = await response.json();
+
+      setTotalSpent(summary.totalSpent ?? 0);
+      setMonthlyExpenses(summary.monthlyExpenses ?? []);
+
+      setPartnerBalances(
+        (summary.balance ?? []).map((item: { userId: string; name: string; balance: number }) => {
           const isReceiving = item.balance > 0;
-          return { id: item.userId, name: item.name, email: "", initials: item.name.split(" ").map((part: string) => part[0]).join("").slice(0, 2), status: isReceiving ? "receives" : "owes", balance: `₹${Math.abs(item.balance).toLocaleString("en-IN")}`, subtitle: isReceiving ? "Should receive from partners" : "Pending amount to pay", isCurrentUser: item.userId === user?.id };
-        }));
-        setExpenses(expenseData.map((item: { id: string; description: string; amountPaid: number; transactionId: string; category: string | null; expenseDate: string; paidBy: { name: string }; attachments?: Attachment[] }) => ({ id: item.id, description: item.description, paidBy: item.paidBy.name, amount: item.amountPaid, formattedAmount: `₹${item.amountPaid.toLocaleString("en-IN")}`, date: new Date(item.expenseDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }), category: item.category ?? "Uncategorised", attachments: item.attachments || [] })));
-        setSettlements(settlementData.map((item: { id: string; amountPaid: number; settledAt: string | null; fromUser: { name: string }; toUser: { name: string }; attachments?: Attachment[] }) => ({ id: item.id, fromUser: item.fromUser.name, toUser: item.toUser.name, amount: item.amountPaid, formattedAmount: `₹${item.amountPaid.toLocaleString("en-IN")}`, date: item.settledAt ? new Date(item.settledAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Pending", attachments: item.attachments || [] })));
-        setIsLoading(false);
-      })
-      .catch(() => {
-        setIsLoading(false);
-      });
+          return {
+            id: item.userId,
+            name: item.name,
+            email: "",
+            initials: item.name.split(" ").map((part: string) => part[0]).join("").slice(0, 2),
+            status: isReceiving ? "receives" : "owes",
+            balance: `₹${Math.abs(item.balance).toLocaleString("en-IN")}`,
+            subtitle: isReceiving ? "Should receive from partners" : "Pending amount to pay",
+            isCurrentUser: item.userId === (currentUserId || user?.id),
+          };
+        })
+      );
+
+      setExpenses(
+        (expenseData || []).map(
+          (item: {
+            id: string;
+            description: string;
+            amountPaid: number;
+            transactionId: string;
+            category: string | null;
+            expenseDate: string;
+            paidBy: { name: string };
+            attachments?: Attachment[];
+          }) => ({
+            id: item.id,
+            description: item.description,
+            paidBy: item.paidBy.name,
+            amount: item.amountPaid,
+            formattedAmount: `₹${item.amountPaid.toLocaleString("en-IN")}`,
+            date: new Date(item.expenseDate).toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            }),
+            category: item.category ?? "Uncategorised",
+            attachments: item.attachments || [],
+          })
+        )
+      );
+
+      setSettlements(
+        (settlementData || []).map(
+          (item: {
+            id: string;
+            amountPaid: number;
+            status: string;
+            settledAt: string | null;
+            fromUser: { id: string; name: string };
+            toUser: { id: string; name: string };
+            attachments?: Attachment[];
+          }) => ({
+            id: item.id,
+            fromUser: item.fromUser.name,
+            fromUserId: item.fromUser.id,
+            toUser: item.toUser.name,
+            toUserId: item.toUser.id,
+            amount: item.amountPaid,
+            status: item.status || "COMPLETED",
+            formattedAmount: `₹${item.amountPaid.toLocaleString("en-IN")}`,
+            date: item.settledAt
+              ? new Date(item.settledAt).toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "Pending",
+            attachments: item.attachments || [],
+          })
+        )
+      );
+
+      setPendingSettlements(pendingData || []);
+    } catch {
+      // Keep silent fallback state
+    } finally {
+      setIsLoading(false);
+    }
   }, [user?.id]);
+
+  useEffect(() => {
+    loadDashboardData(user?.id);
+  }, [user?.id, loadDashboardData]);
 
   const handleAddExpense = (newExpense: DashboardExpense) => {
     setExpenses((current) => [newExpense, ...current]);
+    loadDashboardData(user?.id);
   };
 
   const handleAddSettlement = (newSettlement: DashboardSettlement) => {
     setSettlements((current) => [newSettlement, ...current]);
+    loadDashboardData(user?.id);
   };
 
   const userName = isMounted && user?.name ? user.name : null;
@@ -164,6 +248,15 @@ export default function DashboardPage() {
             </Button>
           </div>
         </div>
+
+        {/* Pending Settlements Notification Banner */}
+        {user?.id && (
+          <PendingSettlementsBanner
+            pendingSettlements={pendingSettlements}
+            currentUserId={user.id}
+            onSettlementAction={() => loadDashboardData(user.id)}
+          />
+        )}
 
         {/* Financial Summary Cards Grid (4 Cards) */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
@@ -533,46 +626,79 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-3.5">
-                  {settlements.slice(0, 5).map((settlement) => (
-                    <div
-                      key={settlement.id}
-                      onClick={() => setSelectedSettlement(settlement)}
-                      className="bg-[#fff8f1] border border-[#e3d6c5]/70 rounded-[16px] p-4 flex items-center justify-between hover:border-[#fa5d00]/40 hover:shadow-sm cursor-pointer transition-all duration-150 group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                          <ArrowLeftRight className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5 text-sm font-semibold text-[#1d1e1c]">
-                            <span>{settlement.fromUser || settlement.from}</span>
-                            <span className="text-[#fa5d00] font-bold">→</span>
-                            <span>{settlement.toUser || settlement.to}</span>
-                          </div>
-                          <p className="text-xs text-[#8e8b87] flex items-center gap-1 mt-0.5">
-                            <Clock className="w-3 h-3 text-[#8e8b87]" /> {settlement.date}
-                          </p>
-                        </div>
-                      </div>
+                  {settlements.slice(0, 5).map((settlement) => {
+                    const st = (settlement.status || "COMPLETED").toUpperCase();
+                    const isPending = st === "PENDING";
+                    const isCancelled = st === "CANCELLED" || st === "REJECTED";
 
-                      <div className="text-right">
-                        <span className="text-base font-bold text-emerald-600 block tabular-nums">
-                          {settlement.formattedAmount || `₹${settlement.amount.toLocaleString("en-IN")}`}
-                        </span>
-                        <div className="flex items-center justify-end gap-1.5">
-                          {settlement.attachments && settlement.attachments.length > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-[#fa5d00]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#fa5d00]">
-                              <Paperclip className="h-3 w-3" />
-                              {settlement.attachments.length}
-                            </span>
-                          )}
-                          <span className="inline-block bg-emerald-100/60 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                            Settled
+                    return (
+                      <div
+                        key={settlement.id}
+                        onClick={() => setSelectedSettlement(settlement)}
+                        className="bg-[#fff8f1] border border-[#e3d6c5]/70 rounded-[16px] p-4 flex items-center justify-between hover:border-[#fa5d00]/40 hover:shadow-sm cursor-pointer transition-all duration-150 group"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`w-10 h-10 rounded-full border flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform ${
+                              isPending
+                                ? "bg-amber-50 text-amber-600 border-amber-200"
+                                : isCancelled
+                                ? "bg-red-50 text-red-600 border-red-200"
+                                : "bg-emerald-50 text-emerald-600 border-emerald-200"
+                            }`}
+                          >
+                            <ArrowLeftRight className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 text-sm font-semibold text-[#1d1e1c] truncate">
+                              <span className="truncate">{settlement.fromUser || settlement.from}</span>
+                              <span className="text-[#fa5d00] font-bold shrink-0">→</span>
+                              <span className="truncate">{settlement.toUser || settlement.to}</span>
+                            </div>
+                            <p className="text-xs text-[#8e8b87] flex items-center gap-1 mt-0.5">
+                              <Clock className="w-3 h-3 text-[#8e8b87]" /> {settlement.date}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <span
+                            className={`text-base font-bold block tabular-nums ${
+                              isPending
+                                ? "text-amber-700"
+                                : isCancelled
+                                ? "text-red-600"
+                                : "text-emerald-600"
+                            }`}
+                          >
+                            {settlement.formattedAmount || `₹${settlement.amount.toLocaleString("en-IN")}`}
                           </span>
+                          <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                            {settlement.attachments && settlement.attachments.length > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#fa5d00]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#fa5d00]">
+                                <Paperclip className="h-3 w-3" />
+                                {settlement.attachments.length}
+                              </span>
+                            )}
+
+                            {isPending ? (
+                              <span className="inline-flex items-center gap-1 bg-amber-100/90 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border border-amber-300">
+                                <Clock3 className="size-2.5" /> Pending
+                              </span>
+                            ) : isCancelled ? (
+                              <span className="inline-flex items-center gap-1 bg-red-100/80 text-red-900 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border border-red-300">
+                                <XCircle className="size-2.5" /> Rejected
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 bg-emerald-100/60 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                                <CheckCircle2 className="size-2.5" /> Settled
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </Card>
@@ -603,6 +729,7 @@ export default function DashboardPage() {
       <SettlementDetailsModal
         settlement={selectedSettlement}
         onClose={() => setSelectedSettlement(null)}
+        onUpdateSettlement={() => loadDashboardData(user?.id)}
       />
     </div>
   );
