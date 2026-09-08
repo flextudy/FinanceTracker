@@ -83,8 +83,7 @@ export async function POST(request:Request){
                 fromUserId,
                 toUserId,
                 amountPaid,
-                status: SettlementStatus.COMPLETED,
-                settledAt:new Date(),
+                status: SettlementStatus.PENDING,
             },
             include:{
                 fromUser:{
