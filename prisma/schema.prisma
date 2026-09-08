@@ -72,6 +72,10 @@ model Settlement{
   amountPaid Int
   status SettlementStatus @default(PENDING)
   settledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   attachments Attachment[]
   
   fromUser User @relation("SettlementFrom",fields: [fromUserId],references: [id])
